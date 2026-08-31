@@ -8,8 +8,15 @@ import android.os.Bundle;
 import android.os.Environment;
 import android.view.MotionEvent;
 import android.view.View;
+import android.view.Gravity;
 import android.widget.ImageView;
 import android.widget.Toast;
+import android.widget.FrameLayout;
+import android.widget.Button;
+import android.content.Intent;
+import android.net.Uri;
+import android.database.Cursor;
+import android.provider.MediaStore;
 
 import java.io.InputStream;
 import java.util.ArrayList;
@@ -28,14 +35,41 @@ public class MainActivity extends Activity {
     private int currentPage = 0;
     private Bitmap currentBitmap = null;
 
+    private Button openBtn;
+
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
 
+        FrameLayout mainLayout = new FrameLayout(this);
+        mainLayout.setBackgroundColor(Color.WHITE);
+
         imageView = new ImageView(this);
-        imageView.setBackgroundColor(Color.WHITE);
+        imageView.setBackgroundColor(Color.GRAY);
         imageView.setScaleType(ImageView.ScaleType.FIT_CENTER);
-        setContentView(imageView);
+        mainLayout.addView(imageView);
+
+        openBtn = new Button(this);
+        openBtn.setText("Open File (CBZ)");
+        FrameLayout.LayoutParams openBtnParams = new FrameLayout.LayoutParams(
+            FrameLayout.LayoutParams.WRAP_CONTENT,
+            FrameLayout.LayoutParams.WRAP_CONTENT
+        );
+        openBtnParams.gravity = Gravity.CENTER;
+        openBtn.setLayoutParams(openBtnParams);
+        mainLayout.addView(openBtn);
+
+        openBtn.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                Intent intent = new Intent(Intent.ACTION_GET_CONTENT);
+                intent.setType("*/*");
+                startActivityForResult(intent, 1001);
+                openBtn.setVisibility(View.GONE);
+            }
+        });
+
+        setContentView(mainLayout);
 
         imageView.setOnTouchListener(new View.OnTouchListener() {
             @Override
@@ -52,13 +86,67 @@ public class MainActivity extends Activity {
                 return true;
             }
         });
-
-        openFile();
     }
 
-    private void openFile() {
+    @Override
+    protected void onActivityResult(int requestCode, int resultCode, Intent data) {
+        super.onActivityResult(requestCode, resultCode, data);
+        if (requestCode == 1001 && resultCode == RESULT_OK && data != null) {
+            Uri uri = data.getData();
+            String realPath = getPath(uri);
+
+            if (realPath != null) {
+                if (realPath.toLowerCase().endsWith(".cbz")) {
+                    openFile(realPath);
+                    imageView.setBackgroundColor(Color.WHITE);
+                } else {
+                    Toast.makeText(this, "Invalid file extension", Toast.LENGTH_LONG).show();
+                    openBtn.setVisibility(View.VISIBLE);
+                }
+            } else {
+                Toast.makeText(this, "Real Path is wrong", Toast.LENGTH_LONG).show();
+                openBtn.setVisibility(View.VISIBLE);
+            }
+        } else {
+            openBtn.setVisibility(View.VISIBLE);
+        }
+    }
+
+    @Override
+    public void onBackPressed() {
+        if (openBtn.getVisibility() == View.GONE) {
+            openBtn.setVisibility(View.VISIBLE);
+            imageView.setImageBitmap(null);
+
+            if (currentBitmap != null) currentBitmap.recycle();
+            currentBitmap = null;
+
+            closeFile();
+
+            imageView.setBackgroundColor(Color.GRAY);
+        } else {
+            super.onBackPressed();
+        }
+    }
+
+    private String getPath(Uri uri) {
+        if ("file".equalsIgnoreCase(uri.getScheme())) {
+            return uri.getPath();
+        }
+        String[] projection = { MediaStore.Images.Media.DATA };
+        Cursor cursor = getContentResolver().query(uri, projection, null, null, null);
+        if (cursor != null) {
+            int colIndex = cursor.getColumnIndexOrThrow(MediaStore.Images.Media.DATA);
+            cursor.moveToFirst();
+            String path = cursor.getString(colIndex);
+            cursor.close();
+            return path;
+        }
+        return null;
+    }
+
+    private void openFile(String path) {
         try {
-            String path = Environment.getExternalStorageDirectory() + "/PDFs/test.cbz";
             zipFile = new ZipFile(path);
 
             Enumeration<? extends ZipEntry> entries = zipFile.entries();
@@ -83,12 +171,28 @@ public class MainActivity extends Activity {
                 loadPage(0);
             } else {
                 Toast.makeText(this, "No images found", Toast.LENGTH_LONG).show();
+                openBtn.setVisibility(View.VISIBLE);
             }
 
         } catch (Exception e) {
             e.printStackTrace();
             Toast.makeText(this, "Failed to open test.cbz: " + e.getMessage(), Toast.LENGTH_LONG).show();
+            openBtn.setVisibility(View.VISIBLE);
         }
+    }
+
+    private void closeFile() {
+        try {
+            if (zipFile != null) {
+                zipFile.close();
+                zipFile = null;
+            }
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+
+        pages.clear();
+        currentPage = 0;
     }
 
     private void changePage(int direction) {
