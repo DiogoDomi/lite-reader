@@ -1,0 +1,16 @@
+plugins {
+    id 'com.android.application'
+}
+
+android {
+    namespace 'com.leitor.cbz'
+    compileSdkVersion 30
+
+    defaultConfig {
+        applicationId "com.leitor.cbz"
+        minSdkVersion 15
+        targetSdkVersion 15
+        versionCode 1
+        versionName "1.0"
+    }
+}

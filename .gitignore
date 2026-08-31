@@ -1,0 +1,27 @@
+# Arquivos de Build (Onde ficam os APKs e classes compiladas)
+build/
+app/build/
+
+# Pastas ocultas do Gradle
+.gradle/
+
+# Configurações específicas da sua máquina (NUNCA comite isso)
+local.properties
+
+# Arquivos do Neovim / Editores
+*.swp
+*.swo
+.idea/
+*.iml
+.vscode/
+
+# Arquivos de log e SO
+*.log
+.DS_Store
+Thumbs.db
+
+# Scripts de compile e run/debug
+*.sh
+
+# Configurações de editor
+.editorconfig
