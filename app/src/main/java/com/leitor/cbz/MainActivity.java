@@ -41,6 +41,10 @@ public class MainActivity extends Activity {
 
     private Button openBtn;
 
+    private LinearLayout topBar;
+    private Button readingModeBtn;
+    private boolean isRtlMode = true;
+
     private LinearLayout bottomBar;
     private TextView pageCounter;
     private SeekBar pageSlider;
@@ -76,6 +80,40 @@ public class MainActivity extends Activity {
                 openBtn.setVisibility(View.GONE);
             }
         });
+
+        topBar = new LinearLayout(this);
+        topBar.setOrientation(LinearLayout.HORIZONTAL);
+        topBar.setGravity(Gravity.END | Gravity.CENTER_VERTICAL);
+        topBar.setBackgroundColor(Color.argb(220, 20, 20, 20));
+        int topBarHeightPx = (int) (50 * getResources().getDisplayMetrics().density);
+        FrameLayout.LayoutParams topBarParams = new FrameLayout.LayoutParams(
+            FrameLayout.LayoutParams.MATCH_PARENT,
+            topBarHeightPx
+        );
+        topBarParams.gravity = Gravity.TOP;
+        topBar.setLayoutParams(topBarParams);
+        topBar.setVisibility(View.INVISIBLE);
+
+        readingModeBtn = new Button(this);
+        readingModeBtn.setText("RTL");
+        readingModeBtn.setBackgroundColor(Color.TRANSPARENT);
+        readingModeBtn.setTextColor(Color.WHITE);
+
+        LinearLayout.LayoutParams readingModeBtnParams = new LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.WRAP_CONTENT,
+            LinearLayout.LayoutParams.MATCH_PARENT
+        );
+        readingModeBtn.setLayoutParams(readingModeBtnParams);
+
+        readingModeBtn.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                updateReadingMode();
+            }
+        });
+
+        topBar.addView(readingModeBtn);
+        mainLayout.addView(topBar);
 
         bottomBar = new LinearLayout(this);
         bottomBar.setOrientation(LinearLayout.HORIZONTAL);
@@ -143,9 +181,9 @@ public class MainActivity extends Activity {
                     float screenWidth = v.getWidth();
                     float touchXAxis = event.getX();
                     if (touchXAxis <= screenWidth * 0.25f) {
-                        changePage(1);
+                        navigate(1);
                     } else if (touchXAxis >= screenWidth * 0.75f) {
-                        changePage(-1);
+                        navigate(-1);
                     }
                 }
                 return true;
@@ -164,6 +202,7 @@ public class MainActivity extends Activity {
                 if (realPath.toLowerCase().endsWith(".cbz")) {
                     openFile(realPath);
                     imageView.setBackgroundColor(Color.WHITE);
+                    topBar.setVisibility(View.VISIBLE);
                     bottomBar.setVisibility(View.VISIBLE);
                     toggleFrame(true);
                 } else {
@@ -191,6 +230,7 @@ public class MainActivity extends Activity {
             closeFile();
 
             imageView.setBackgroundColor(Color.GRAY);
+            topBar.setVisibility(View.INVISIBLE);
             bottomBar.setVisibility(View.INVISIBLE);
 
             toggleFrame(false);
@@ -311,7 +351,12 @@ public class MainActivity extends Activity {
 
     private void updatePageTextCounter() {
         if (pageCounter != null) {
-            String text = "[ " + pages.size() + " / " + (currentPage + 1) + " ]";
+            String text = "";
+            if (isRtlMode) {
+                text = "[ " + pages.size() + " / " + (currentPage + 1) + " ]";
+            } else {
+                text = "[ " + (currentPage + 1) + " / " + pages.size() + " ]";
+            }
             pageCounter.setText(text);
         }
         if (pageSlider != null) {
@@ -323,11 +368,37 @@ public class MainActivity extends Activity {
         FrameLayout.LayoutParams params = (FrameLayout.LayoutParams) imageView.getLayoutParams();
         if (activate) {
             int barMarginPx = (int) (50 * getResources().getDisplayMetrics().density);
-            params.setMargins(0, 0, 0, barMarginPx);
+            params.setMargins(0, barMarginPx, 0, barMarginPx);
         } else {
             params.setMargins(0, 0, 0, 0);
         }
         imageView.setLayoutParams(params);
+    }
+
+    private void updateReadingMode() {
+        isRtlMode = !isRtlMode;
+
+        pageSlider.setScaleX(isRtlMode ? -1f : 1f);
+
+        bottomBar.removeAllViews();
+        if (isRtlMode) {
+            bottomBar.addView(pageSlider);
+            bottomBar.addView(pageCounter);
+        } else {
+            bottomBar.addView(pageCounter);
+            bottomBar.addView(pageSlider);
+        }
+
+        if (readingModeBtn != null) {
+            readingModeBtn.setText(isRtlMode ? "RTL" : "LTR");
+        }
+
+        updatePageTextCounter();
+    }
+
+    private void navigate(int touchSide) {
+        int direction = isRtlMode ? touchSide : -touchSide;
+        changePage(direction);
     }
 
     @Override
