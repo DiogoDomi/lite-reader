@@ -15,6 +15,7 @@ import android.widget.FrameLayout;
 import android.widget.TextView;
 import android.widget.Button;
 import android.widget.LinearLayout;
+import android.widget.SeekBar;
 import android.content.Intent;
 import android.net.Uri;
 import android.database.Cursor;
@@ -42,6 +43,7 @@ public class MainActivity extends Activity {
 
     private LinearLayout bottomBar;
     private TextView pageCounter;
+    private SeekBar pageSlider;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -88,19 +90,47 @@ public class MainActivity extends Activity {
         bottomBar.setLayoutParams(bottomBarParams);
         bottomBar.setVisibility(View.INVISIBLE);
 
+        pageSlider = new SeekBar(this);
+        LinearLayout.LayoutParams pageSliderParams = new LinearLayout.LayoutParams(
+            0,
+            LinearLayout.LayoutParams.WRAP_CONTENT,
+            1.0f
+        );
+        pageSlider.setLayoutParams(pageSliderParams);
+        int pageSliderPaddingPx = (int) (20 * getResources().getDisplayMetrics().density);
+        pageSlider.setPadding(pageSliderPaddingPx, 0, pageSliderPaddingPx, 0);
+        pageSlider.setScaleX(-1f);
+
+        pageSlider.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
+            @Override
+            public void onProgressChanged(SeekBar seekBar, int progress, boolean fromUser) {
+                if (fromUser) {
+                    loadPage(progress);
+                    updatePageTextCounter();
+                }
+            }
+
+            @Override
+            public void onStartTrackingTouch(SeekBar seekBar) { }
+
+            @Override
+            public void onStopTrackingTouch(SeekBar seekBar) { }
+        });
+
         pageCounter = new TextView(this);
         pageCounter.setTextColor(Color.WHITE);
         pageCounter.setTextSize(16f);
         pageCounter.setGravity(Gravity.CENTER);
-        int pageCounterFixWidthPx = (int) (120 * getResources().getDisplayMetrics().density);
+        int pageCounterWidthPx = (int) (120 * getResources().getDisplayMetrics().density);
         LinearLayout.LayoutParams pageCounterParams = new LinearLayout.LayoutParams(
-            pageCounterFixWidthPx,
+            pageCounterWidthPx,
             LinearLayout.LayoutParams.MATCH_PARENT
         );
         int pageCounterPaddingPx = (int) (10 * getResources().getDisplayMetrics().density);
         pageCounter.setPadding(pageCounterPaddingPx, 0, pageCounterPaddingPx, 0);
         pageCounter.setLayoutParams(pageCounterParams);
 
+        bottomBar.addView(pageSlider);
         bottomBar.addView(pageCounter);
         mainLayout.addView(bottomBar);
 
@@ -219,6 +249,7 @@ public class MainActivity extends Activity {
 
             if (!pages.isEmpty()) {
                 loadPage(0);
+                pageSlider.setMax(pages.size() - 1);
             } else {
                 Toast.makeText(this, "No images found", Toast.LENGTH_LONG).show();
                 openBtn.setVisibility(View.VISIBLE);
@@ -282,6 +313,9 @@ public class MainActivity extends Activity {
         if (pageCounter != null) {
             String text = "[ " + pages.size() + " / " + (currentPage + 1) + " ]";
             pageCounter.setText(text);
+        }
+        if (pageSlider != null) {
+            pageSlider.setProgress(currentPage);
         }
     }
 
