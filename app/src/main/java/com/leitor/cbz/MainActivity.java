@@ -5,7 +5,6 @@ import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
 import android.graphics.Color;
 import android.os.Bundle;
-import android.os.Environment;
 import android.view.MotionEvent;
 import android.view.View;
 import android.view.Gravity;
@@ -37,11 +36,14 @@ public class MainActivity extends Activity {
     private List<String> pages = new ArrayList<>();
     private ZipFile zipFile;
     private int currentPage = 0;
-    private Bitmap currentBitmap = null;
+    private Bitmap[] bitmaps = null;
+    private int currentBitmapPart = 0;
 
     private Button openBtn;
 
     private FrameLayout topBar;
+    private Button sliceBitmapModeBtn;
+    private boolean isSliceBitmapMode = false;
     private TextView fileNameText;
     private Button readingModeBtn;
     private boolean isRtlMode = true;
@@ -59,6 +61,7 @@ public class MainActivity extends Activity {
 
         imageView = new ImageView(this);
         imageView.setBackgroundColor(Color.GRAY);
+        imageView.setAdjustViewBounds(true);
         imageView.setScaleType(ImageView.ScaleType.FIT_CENTER);
         mainLayout.addView(imageView);
 
@@ -93,6 +96,24 @@ public class MainActivity extends Activity {
         topBar.setLayoutParams(topBarParams);
         topBar.setVisibility(View.INVISIBLE);
 
+        sliceBitmapModeBtn = new Button(this);
+        sliceBitmapModeBtn.setText(isSliceBitmapMode ? "Slice: ON" : "Slice: OFF");
+        sliceBitmapModeBtn.setBackgroundColor(Color.TRANSPARENT);
+        sliceBitmapModeBtn.setTextColor(Color.WHITE);
+        FrameLayout.LayoutParams sliceBitmapModeBtnParams = new FrameLayout.LayoutParams(
+            FrameLayout.LayoutParams.WRAP_CONTENT,
+            FrameLayout.LayoutParams.MATCH_PARENT
+        );
+        sliceBitmapModeBtnParams.gravity = Gravity.START | Gravity.CENTER_VERTICAL;
+        sliceBitmapModeBtn.setLayoutParams(sliceBitmapModeBtnParams);
+
+        sliceBitmapModeBtn.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                toggleSlicePageMode();
+            }
+        });
+
         fileNameText = new TextView(this);
         fileNameText.setTextColor(Color.WHITE);
         fileNameText.setTextSize(16f);
@@ -122,10 +143,11 @@ public class MainActivity extends Activity {
         readingModeBtn.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
-                updateReadingMode();
+                toggleReadingDirectionMode();
             }
         });
 
+        topBar.addView(sliceBitmapModeBtn);
         topBar.addView(fileNameText);
         topBar.addView(readingModeBtn);
         mainLayout.addView(topBar);
@@ -158,8 +180,7 @@ public class MainActivity extends Activity {
             @Override
             public void onProgressChanged(SeekBar seekBar, int progress, boolean fromUser) {
                 if (fromUser) {
-                    loadPage(progress);
-                    updatePageTextCounter();
+                    loadPage(progress, 1);
                 }
             }
 
@@ -172,7 +193,7 @@ public class MainActivity extends Activity {
 
         pageCounter = new TextView(this);
         pageCounter.setTextColor(Color.WHITE);
-        pageCounter.setTextSize(16f);
+        pageCounter.setTextSize(14f);
         pageCounter.setGravity(Gravity.CENTER);
         int pageCounterWidthPx = (int) (120 * getResources().getDisplayMetrics().density);
         LinearLayout.LayoutParams pageCounterParams = new LinearLayout.LayoutParams(
@@ -239,9 +260,6 @@ public class MainActivity extends Activity {
             openBtn.setVisibility(View.VISIBLE);
             imageView.setImageBitmap(null);
 
-            if (currentBitmap != null) currentBitmap.recycle();
-            currentBitmap = null;
-
             closeFile();
 
             imageView.setBackgroundColor(Color.GRAY);
@@ -303,7 +321,7 @@ public class MainActivity extends Activity {
             Collections.sort(pages);
 
             if (!pages.isEmpty()) {
-                loadPage(0);
+                loadPage(0, 1);
                 pageSlider.setMax(pages.size() - 1);
                 String fileName = new java.io.File(path).getName();
                 fileNameText.setText(fileName);
@@ -320,6 +338,7 @@ public class MainActivity extends Activity {
     }
 
     private void closeFile() {
+        recycleCurrentBitmaps();
         try {
             if (zipFile != null) {
                 zipFile.close();
@@ -331,17 +350,20 @@ public class MainActivity extends Activity {
 
         pages.clear();
         currentPage = 0;
+        currentBitmapPart = 0;
     }
 
     private void changePage(int direction) {
         int pageIndex = currentPage + direction;
         if (pageIndex >= 0 && pageIndex < pages.size()) {
-            loadPage(pageIndex);
+            loadPage(pageIndex, direction);
         }
     }
 
-    private void loadPage(int pageIndex) {
+    private void loadPage(int pageIndex, int direction) {
         try {
+            recycleCurrentBitmaps();
+
             String entryName = pages.get(pageIndex);
             ZipEntry entry = zipFile.getEntry(entryName);
             InputStream imageStream = zipFile.getInputStream(entry);
@@ -352,18 +374,57 @@ public class MainActivity extends Activity {
             Bitmap bitmap = BitmapFactory.decodeStream(imageStream, null, options);
             imageStream.close();
 
-            imageView.setImageBitmap(bitmap);
+            processBitmap(bitmap);
 
-            if (currentBitmap != null) currentBitmap.recycle();
-
-            currentBitmap = bitmap;
             currentPage = pageIndex;
 
-            updatePageTextCounter();
+            if (direction < 0) {
+                currentBitmapPart = bitmaps.length - 1;
+            } else {
+                currentBitmapPart = 0;
+            }
+
+            renderBitmap(bitmaps[currentBitmapPart]);
 
         } catch (Exception e) {
             e.printStackTrace();
         }
+    }
+
+    private void toggleSlicePageMode() {
+        isSliceBitmapMode = !isSliceBitmapMode;
+
+        if (sliceBitmapModeBtn != null) {
+            sliceBitmapModeBtn.setText(isSliceBitmapMode ? "Slice: ON" : "Slice: OFF");
+        }
+
+        if (zipFile != null && !pages.isEmpty()) {
+            loadPage(currentPage, 1);
+        }
+    }
+
+    private void processBitmap(Bitmap bitmap) {
+        int width = bitmap.getWidth();
+        int height = bitmap.getHeight();
+
+        if (isSliceBitmapMode && width > height) {
+            int mid = width / 2;
+            int rightWidth = width - mid;
+
+            bitmaps = new Bitmap[2];
+            bitmaps[0] = Bitmap.createBitmap(bitmap, mid, 0, rightWidth, height);
+            bitmaps[1] = Bitmap.createBitmap(bitmap, 0, 0, mid, height);
+
+            safeRecycle(bitmap);
+        } else {
+            bitmaps = new Bitmap[1];
+            bitmaps[0] = bitmap;
+        }
+    }
+
+    private void renderBitmap(Bitmap bitmap) {
+        imageView.setImageBitmap(bitmap);
+        updatePageTextCounter();
     }
 
     private void updatePageTextCounter() {
@@ -374,6 +435,18 @@ public class MainActivity extends Activity {
             } else {
                 text = "[ " + (currentPage + 1) + " / " + pages.size() + " ]";
             }
+
+            if (bitmaps != null && bitmaps.length > 1) {
+                int currentDisplayPart = currentBitmapPart + 1;
+                int totalParts = bitmaps.length;
+
+                if (isRtlMode) {
+                    text += " \n( " + totalParts + " / " + currentDisplayPart + " )";
+                } else {
+                    text += " \n( " + currentDisplayPart + " / " + totalParts + " )";
+                }
+            }
+
             pageCounter.setText(text);
         }
         if (pageSlider != null) {
@@ -384,15 +457,16 @@ public class MainActivity extends Activity {
     private void toggleFrame(boolean activate) {
         FrameLayout.LayoutParams params = (FrameLayout.LayoutParams) imageView.getLayoutParams();
         if (activate) {
-            int barMarginPx = (int) (50 * getResources().getDisplayMetrics().density);
-            params.setMargins(0, barMarginPx, 0, barMarginPx);
+            int verticalMarginPx = (int) (60 * getResources().getDisplayMetrics().density);
+            int horizontalMarginPx = (int) (5 * getResources().getDisplayMetrics().density);
+            params.setMargins(horizontalMarginPx, verticalMarginPx, horizontalMarginPx, verticalMarginPx);
         } else {
             params.setMargins(0, 0, 0, 0);
         }
         imageView.setLayoutParams(params);
     }
 
-    private void updateReadingMode() {
+    private void toggleReadingDirectionMode() {
         isRtlMode = !isRtlMode;
 
         pageSlider.setScaleX(isRtlMode ? -1f : 1f);
@@ -415,7 +489,37 @@ public class MainActivity extends Activity {
 
     private void navigate(int touchSide) {
         int direction = isRtlMode ? touchSide : -touchSide;
-        changePage(direction);
+
+        if (direction > 0) {
+            if (bitmaps != null && currentBitmapPart < bitmaps.length - 1) {
+                currentBitmapPart++;
+                renderBitmap(bitmaps[currentBitmapPart]);
+            } else {
+                changePage(1);
+            }
+        } else if (direction < 0) {
+            if (bitmaps != null && currentBitmapPart > 0) {
+                currentBitmapPart--;
+                renderBitmap(bitmaps[currentBitmapPart]);
+            } else {
+                changePage(-1);
+            }
+        }
+    }
+
+    private void safeRecycle(Bitmap bitmap) {
+        if (bitmap != null && !bitmap.isRecycled()) {
+            bitmap.recycle();
+        }
+    }
+
+    private void recycleCurrentBitmaps() {
+        if (bitmaps != null) {
+            for (int i = 0; i < bitmaps.length; i++) {
+                safeRecycle(bitmaps[i]);
+                bitmaps[i] = null;
+            }
+        }
     }
 
     @Override
@@ -423,8 +527,7 @@ public class MainActivity extends Activity {
         super.onDestroy();
         try {
             if (zipFile != null) zipFile.close();
-            if (currentBitmap != null) currentBitmap.recycle();
-            currentBitmap = null;
+            recycleCurrentBitmaps();
         } catch (Exception e) {
             e.printStackTrace();
         }
