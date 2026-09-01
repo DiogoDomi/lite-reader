@@ -41,7 +41,8 @@ public class MainActivity extends Activity {
 
     private Button openBtn;
 
-    private LinearLayout topBar;
+    private FrameLayout topBar;
+    private TextView fileNameText;
     private Button readingModeBtn;
     private boolean isRtlMode = true;
 
@@ -81,9 +82,7 @@ public class MainActivity extends Activity {
             }
         });
 
-        topBar = new LinearLayout(this);
-        topBar.setOrientation(LinearLayout.HORIZONTAL);
-        topBar.setGravity(Gravity.END | Gravity.CENTER_VERTICAL);
+        topBar = new FrameLayout(this);
         topBar.setBackgroundColor(Color.argb(220, 20, 20, 20));
         int topBarHeightPx = (int) (50 * getResources().getDisplayMetrics().density);
         FrameLayout.LayoutParams topBarParams = new FrameLayout.LayoutParams(
@@ -94,15 +93,30 @@ public class MainActivity extends Activity {
         topBar.setLayoutParams(topBarParams);
         topBar.setVisibility(View.INVISIBLE);
 
+        fileNameText = new TextView(this);
+        fileNameText.setTextColor(Color.WHITE);
+        fileNameText.setTextSize(16f);
+        fileNameText.setSingleLine(true);
+        fileNameText.setEllipsize(android.text.TextUtils.TruncateAt.END);
+        FrameLayout.LayoutParams fileNameTextParams = new FrameLayout.LayoutParams(
+            FrameLayout.LayoutParams.WRAP_CONTENT,
+            FrameLayout.LayoutParams.WRAP_CONTENT
+        );
+        fileNameTextParams.gravity = Gravity.CENTER;
+        int fileNameTextPaddingPx = (int) (80 * getResources().getDisplayMetrics().density);
+        fileNameTextParams.setMargins(fileNameTextPaddingPx, 0, fileNameTextPaddingPx, 0);
+        fileNameText.setLayoutParams(fileNameTextParams);
+
         readingModeBtn = new Button(this);
         readingModeBtn.setText("RTL");
         readingModeBtn.setBackgroundColor(Color.TRANSPARENT);
         readingModeBtn.setTextColor(Color.WHITE);
 
-        LinearLayout.LayoutParams readingModeBtnParams = new LinearLayout.LayoutParams(
-            LinearLayout.LayoutParams.WRAP_CONTENT,
-            LinearLayout.LayoutParams.MATCH_PARENT
+        FrameLayout.LayoutParams readingModeBtnParams = new FrameLayout.LayoutParams(
+            FrameLayout.LayoutParams.WRAP_CONTENT,
+            FrameLayout.LayoutParams.MATCH_PARENT
         );
+        readingModeBtnParams.gravity = Gravity.END | Gravity.CENTER_VERTICAL;
         readingModeBtn.setLayoutParams(readingModeBtnParams);
 
         readingModeBtn.setOnClickListener(new View.OnClickListener() {
@@ -112,6 +126,7 @@ public class MainActivity extends Activity {
             }
         });
 
+        topBar.addView(fileNameText);
         topBar.addView(readingModeBtn);
         mainLayout.addView(topBar);
 
@@ -290,6 +305,8 @@ public class MainActivity extends Activity {
             if (!pages.isEmpty()) {
                 loadPage(0);
                 pageSlider.setMax(pages.size() - 1);
+                String fileName = new java.io.File(path).getName();
+                fileNameText.setText(fileName);
             } else {
                 Toast.makeText(this, "No images found", Toast.LENGTH_LONG).show();
                 openBtn.setVisibility(View.VISIBLE);
