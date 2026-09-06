@@ -5,6 +5,7 @@ import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
 import android.graphics.Color;
 import android.os.Bundle;
+import android.os.Handler;
 import android.view.MotionEvent;
 import android.view.View;
 import android.view.Gravity;
@@ -51,6 +52,9 @@ public class MainActivity extends Activity {
     private LinearLayout bottomBar;
     private TextView pageCounter;
     private SeekBar pageSlider;
+
+    private Handler hideHandler = new Handler();
+    private Runnable hideRunnable;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -111,6 +115,7 @@ public class MainActivity extends Activity {
             @Override
             public void onClick(View v) {
                 toggleSlicePageMode();
+                resetHideTimer();
             }
         });
 
@@ -144,6 +149,7 @@ public class MainActivity extends Activity {
             @Override
             public void onClick(View v) {
                 toggleReadingDirectionMode();
+                resetHideTimer();
             }
         });
 
@@ -185,10 +191,14 @@ public class MainActivity extends Activity {
             }
 
             @Override
-            public void onStartTrackingTouch(SeekBar seekBar) { }
+            public void onStartTrackingTouch(SeekBar seekBar) {
+                hideHandler.removeCallbacks(hideRunnable);
+            }
 
             @Override
-            public void onStopTrackingTouch(SeekBar seekBar) { }
+            public void onStopTrackingTouch(SeekBar seekBar) {
+                resetHideTimer();
+            }
         });
 
         pageCounter = new TextView(this);
@@ -207,6 +217,13 @@ public class MainActivity extends Activity {
         bottomBar.addView(pageSlider);
         bottomBar.addView(pageCounter);
         mainLayout.addView(bottomBar);
+
+        hideRunnable = new Runnable() {
+            @Override
+            public void run() {
+                hideHUD();
+            }
+        };
 
         setContentView(mainLayout);
 
@@ -465,6 +482,8 @@ public class MainActivity extends Activity {
         pageCounter.setBackgroundColor(Color.TRANSPARENT);
         pageSlider.setVisibility(View.VISIBLE);
         pageCounter.setVisibility(View.VISIBLE);
+
+        resetHideTimer();
     }
 
     private void hideHUD() {
@@ -472,6 +491,8 @@ public class MainActivity extends Activity {
         bottomBar.setVisibility(View.INVISIBLE);
         pageSlider.setVisibility(View.INVISIBLE);
         pageCounter.setVisibility(View.INVISIBLE);
+
+        hideHandler.removeCallbacks(hideRunnable);
     }
 
     private void toggleHUD() {
@@ -484,6 +505,7 @@ public class MainActivity extends Activity {
 
     private void showPageTextCounter() {
         if (topBar.getVisibility() == View.VISIBLE) {
+            resetHideTimer();
             return;
         }
 
@@ -493,6 +515,13 @@ public class MainActivity extends Activity {
         pageCounter.setBackgroundColor(Color.argb(220, 20, 20, 20));
         pageSlider.setVisibility(View.INVISIBLE);
         pageCounter.setVisibility(View.VISIBLE);
+
+        resetHideTimer();
+    }
+
+    private void resetHideTimer() {
+        hideHandler.removeCallbacks(hideRunnable);
+        hideHandler.postDelayed(hideRunnable, 5000);
     }
 
     private void toggleFrame(boolean activate) {
@@ -574,6 +603,7 @@ public class MainActivity extends Activity {
         } catch (Exception e) {
             e.printStackTrace();
         }
+        hideHandler.removeCallbacks(hideRunnable);
     }
 }
 
