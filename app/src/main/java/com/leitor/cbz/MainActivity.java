@@ -220,6 +220,10 @@ public class MainActivity extends Activity {
                         navigate(1);
                     } else if (touchXAxis >= screenWidth * 0.75f) {
                         navigate(-1);
+                    } else {
+                        if (zipFile != null) {
+                            toggleHUD();
+                        }
                     }
                 }
                 return true;
@@ -238,8 +242,7 @@ public class MainActivity extends Activity {
                 if (realPath.toLowerCase().endsWith(".cbz")) {
                     openFile(realPath);
                     imageView.setBackgroundColor(Color.WHITE);
-                    topBar.setVisibility(View.VISIBLE);
-                    bottomBar.setVisibility(View.VISIBLE);
+                    showHUD();
                     toggleFrame(true);
                 } else {
                     Toast.makeText(this, "Invalid file extension", Toast.LENGTH_LONG).show();
@@ -263,8 +266,6 @@ public class MainActivity extends Activity {
             closeFile();
 
             imageView.setBackgroundColor(Color.GRAY);
-            topBar.setVisibility(View.INVISIBLE);
-            bottomBar.setVisibility(View.INVISIBLE);
 
             toggleFrame(false);
         } else {
@@ -351,6 +352,7 @@ public class MainActivity extends Activity {
         pages.clear();
         currentPage = 0;
         currentBitmapPart = 0;
+        hideHUD();
     }
 
     private void changePage(int direction) {
@@ -412,6 +414,7 @@ public class MainActivity extends Activity {
             int rightWidth = width - mid;
 
             bitmaps = new Bitmap[2];
+
             bitmaps[0] = Bitmap.createBitmap(bitmap, mid, 0, rightWidth, height);
             bitmaps[1] = Bitmap.createBitmap(bitmap, 0, 0, mid, height);
 
@@ -451,6 +454,24 @@ public class MainActivity extends Activity {
         }
         if (pageSlider != null) {
             pageSlider.setProgress(currentPage);
+        }
+    }
+
+    private void showHUD() {
+        topBar.setVisibility(View.VISIBLE);
+        bottomBar.setVisibility(View.VISIBLE);
+    }
+
+    private void hideHUD() {
+        topBar.setVisibility(View.INVISIBLE);
+        bottomBar.setVisibility(View.INVISIBLE);
+    }
+
+    private void toggleHUD() {
+        if (topBar.getVisibility() == View.VISIBLE) {
+            hideHUD();
+        } else {
+            showHUD();
         }
     }
 
