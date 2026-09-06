@@ -4,11 +4,14 @@ import android.app.Activity;
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
 import android.graphics.Color;
+import android.graphics.Matrix;
+import android.graphics.PointF;
 import android.os.Bundle;
 import android.os.Handler;
 import android.view.MotionEvent;
 import android.view.View;
 import android.view.Gravity;
+import android.view.ViewTreeObserver;
 import android.widget.ImageView;
 import android.widget.Toast;
 import android.widget.FrameLayout;
@@ -56,6 +59,20 @@ public class MainActivity extends Activity {
     private Handler hideHandler = new Handler();
     private Runnable hideRunnable;
 
+    private Matrix matrix = new Matrix();
+    private Matrix savedMatrix = new Matrix();
+    private static final int NONE = 0;
+    private static final int DRAG = 1;
+    private static final int ZOOM = 2;
+    private int mode = NONE;
+    private PointF start = new PointF();
+    private PointF mid = new PointF();
+    private float oldDist = 1f;
+    private float[] matrixValues = new float[9];
+    private float baseScale = 1f;
+    private boolean isPanning = false;
+    private long downTime = 0;
+
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
@@ -66,7 +83,12 @@ public class MainActivity extends Activity {
         imageView = new ImageView(this);
         imageView.setBackgroundColor(Color.GRAY);
         imageView.setAdjustViewBounds(true);
-        imageView.setScaleType(ImageView.ScaleType.FIT_CENTER);
+        imageView.setScaleType(ImageView.ScaleType.MATRIX);
+        FrameLayout.LayoutParams ivParams = new FrameLayout.LayoutParams(
+            FrameLayout.LayoutParams.MATCH_PARENT,
+            FrameLayout.LayoutParams.MATCH_PARENT
+        );
+        imageView.setLayoutParams(ivParams);
         mainLayout.addView(imageView);
 
         openBtn = new Button(this);
@@ -230,19 +252,74 @@ public class MainActivity extends Activity {
         imageView.setOnTouchListener(new View.OnTouchListener() {
             @Override
             public boolean onTouch(View v, MotionEvent event) {
-                if (event.getAction() == MotionEvent.ACTION_UP) {
-                    float screenWidth = v.getWidth();
-                    float touchXAxis = event.getX();
-                    if (touchXAxis <= screenWidth * 0.25f) {
-                        navigate(1);
-                    } else if (touchXAxis >= screenWidth * 0.75f) {
-                        navigate(-1);
-                    } else {
-                        if (zipFile != null) {
-                            toggleHUD();
-                        }
-                    }
+                if (bitmaps == null || bitmaps.length == 0 || bitmaps[currentBitmapPart] == null) {
+                    return false;
                 }
+
+                ImageView view = (ImageView) v;
+
+                switch (event.getAction() & MotionEvent.ACTION_MASK) {
+                    case MotionEvent.ACTION_DOWN:
+                        savedMatrix.set(matrix);
+                        start.set(event.getX(), event.getY());
+                        mode = DRAG;
+                        isPanning = false;
+                        downTime = System.currentTimeMillis();
+                        break;
+                    case MotionEvent.ACTION_POINTER_DOWN:
+                        oldDist = spacing(event);
+                        if (oldDist > 10f) {
+                            savedMatrix.set(matrix);
+                            midPoint(mid, event);
+                            mode = ZOOM;
+                        }
+                        break;
+                    case MotionEvent.ACTION_UP:
+                    case MotionEvent.ACTION_POINTER_UP:
+                        if (mode == DRAG) {
+                            long clickDuration = System.currentTimeMillis() - downTime;
+                            float deltaX = Math.abs(event.getX() - start.x);
+                            float deltaY = Math.abs(event.getY() - start.y);
+
+                            if (!isPanning && clickDuration < 300 && deltaX < 20 && deltaY < 20) {
+                                float screenWidth = v.getWidth();
+                                float touchXAxis = event.getX();
+                                if (touchXAxis <= screenWidth * 0.25f) {
+                                    navigate(1);
+                                } else if (touchXAxis >= screenWidth * 0.75f) {
+                                    navigate(-1);
+                                } else {
+                                    if (zipFile != null) {
+                                        toggleHUD();
+                                    }
+                                }
+                            }
+                        }
+                        mode = NONE;
+                        break;
+                    case MotionEvent.ACTION_MOVE:
+                        if (mode == DRAG) {
+                            float deltaX = event.getX() - start.x;
+                            float deltaY = event.getY() - start.y;
+                            if (Math.abs(deltaX) > 20 || Math.abs(deltaY) > 20) {
+                                isPanning = true;
+                            }
+                            matrix.set(savedMatrix);
+                            matrix.postTranslate(deltaX, deltaY);
+                            limitDrag(matrix, view);
+                        } else if (mode == ZOOM) {
+                            float newDist = spacing(event);
+                            if (newDist > 10f) {
+                                matrix.set(savedMatrix);
+                                float scale = newDist / oldDist;
+                                matrix.postScale(scale, scale, mid.x, mid.y);
+                                limitZoom(matrix);
+                                limitDrag(matrix, view);
+                            }
+                        }
+                        break;
+                }
+                view.setImageMatrix(matrix);
                 return true;
             }
         });
@@ -279,11 +356,8 @@ public class MainActivity extends Activity {
         if (openBtn.getVisibility() == View.GONE) {
             openBtn.setVisibility(View.VISIBLE);
             imageView.setImageBitmap(null);
-
             closeFile();
-
             imageView.setBackgroundColor(Color.GRAY);
-
             toggleFrame(false);
         } else {
             super.onBackPressed();
@@ -291,13 +365,31 @@ public class MainActivity extends Activity {
     }
 
     @Override
-    public void onConfigurationChanged(android.content.res.Configuration newConfig) {
+    public void onConfigurationChanged(final android.content.res.Configuration newConfig) {
         super.onConfigurationChanged(newConfig);
 
-        if (bottomBar.getVisibility() == View.VISIBLE) {
-            toggleFrame(true);
-            imageView.requestLayout();
-        }
+        toggleFrame(bottomBar.getVisibility() == View.VISIBLE);
+        imageView.requestLayout();
+
+        final boolean isLandscape = newConfig.orientation == Configuration.ORIENTATION_LANDSCAPE;
+
+        imageView.getViewTreeObserver().addOnGlobalLayoutListener(new ViewTreeObserver.OnGlobalLayoutListener() {
+            @SuppressWarnings("deprecation")
+            @Override
+            public void onGlobalLayout() {
+                int w = imageView.getWidth();
+                int h = imageView.getHeight();
+                if (w > 0 && h > 0) {
+                    boolean viewIsLandscape = w > h;
+                    if (viewIsLandscape == isLandscape) {
+                        imageView.getViewTreeObserver().removeGlobalOnLayoutListener(this);
+                        if (bitmaps != null && currentBitmapPart >= 0 && currentBitmapPart < bitmaps.length) {
+                            initBaseMatrix(bitmaps[currentBitmapPart]);
+                        }
+                    }
+                }
+            }
+        });
     }
 
     private String getPath(Uri uri) {
@@ -445,7 +537,109 @@ public class MainActivity extends Activity {
 
     private void renderBitmap(Bitmap bitmap) {
         imageView.setImageBitmap(bitmap);
+        final Bitmap bmp = bitmap;
+        imageView.getViewTreeObserver().addOnGlobalLayoutListener(new ViewTreeObserver.OnGlobalLayoutListener() {
+            @SuppressWarnings("deprecation")
+            @Override
+            public void onGlobalLayout() {
+                if (imageView.getWidth() > 0 && imageView.getHeight() > 0) {
+                    imageView.getViewTreeObserver().removeGlobalOnLayoutListener(this);
+                    initBaseMatrix(bmp);
+                }
+            }
+        });
         updatePageTextCounter();
+    }
+
+    private void initBaseMatrix(Bitmap bitmap) {
+        if (bitmap == null || imageView.getWidth() == 0 || imageView.getHeight() == 0) return;
+
+        float vWidth = imageView.getWidth();
+        float vHeight = imageView.getHeight();
+        float dWidth = bitmap.getWidth();
+        float dHeight = bitmap.getHeight();
+
+        if (dWidth * vHeight > vWidth * dHeight) {
+            baseScale = vWidth / dWidth;
+        } else {
+            baseScale = vHeight / dHeight;
+        }
+
+        float dx = (vWidth - dWidth * baseScale) / 2f;
+        float dy = (vHeight - dHeight * baseScale) / 2f;
+
+        matrix.setScale(baseScale, baseScale);
+        matrix.postTranslate(dx, dy);
+        imageView.setImageMatrix(matrix);
+        imageView.invalidate();
+    }
+
+    private float spacing(MotionEvent event) {
+        float x = event.getX(0) - event.getX(1);
+        float y = event.getY(0) - event.getY(1);
+        return (float) Math.sqrt(x * x + y * y);
+    }
+
+    private void midPoint(PointF point, MotionEvent event) {
+        float x = event.getX(0) + event.getX(1);
+        float y = event.getY(0) + event.getY(1);
+        point.set(x / 2f, y / 2f);
+    }
+
+    private void limitZoom(Matrix m) {
+        m.getValues(matrixValues);
+        float scaleX = matrixValues[Matrix.MSCALE_X];
+        if (scaleX < baseScale) {
+            float target = baseScale / scaleX;
+            m.postScale(target, target, mid.x, mid.y);
+        } else if (scaleX > baseScale * 4f) {
+            float target = (baseScale * 4f) / scaleX;
+            m.postScale(target, target, mid.x, mid.y);
+        }
+    }
+
+    private void limitDrag(Matrix m, ImageView view) {
+        if (bitmaps == null || bitmaps.length <= currentBitmapPart) return;
+        Bitmap currentBmp = bitmaps[currentBitmapPart];
+        if (currentBmp == null) return;
+
+        m.getValues(matrixValues);
+        float transX = matrixValues[Matrix.MTRANS_X];
+        float transY = matrixValues[Matrix.MTRANS_Y];
+        float scaleX = matrixValues[Matrix.MSCALE_X];
+        float scaleY = matrixValues[Matrix.MSCALE_Y];
+
+        float imageWidth = currentBmp.getWidth() * scaleX;
+        float imageHeight = currentBmp.getHeight() * scaleY;
+        float viewWidth = view.getWidth();
+        float viewHeight = view.getHeight();
+
+        float minX, maxX, minY, maxY;
+
+        if (imageWidth <= viewWidth) {
+            minX = (viewWidth - imageWidth) / 2f;
+            maxX = minX;
+        } else {
+            minX = viewWidth - imageWidth;
+            maxX = 0;
+        }
+
+        if (imageHeight <= viewHeight) {
+            minY = (viewHeight - imageHeight) / 2f;
+            maxY = minY;
+        } else {
+            minY = viewHeight - imageHeight;
+            maxY = 0;
+        }
+
+        if (transX < minX) transX = minX;
+        if (transX > maxX) transX = maxX;
+        if (transY < minY) transY = minY;
+        if (transY > maxY) transY = maxY;
+
+        matrixValues[Matrix.MTRANS_X] = transX;
+        matrixValues[Matrix.MTRANS_Y] = transY;
+        m.setValues(matrixValues);
     }
 
     private void updatePageTextCounter() {
