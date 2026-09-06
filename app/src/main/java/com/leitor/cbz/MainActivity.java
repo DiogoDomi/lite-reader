@@ -1,6 +1,7 @@
 package com.leitor.cbz;
 
 import android.app.Activity;
+import android.content.SharedPreferences;
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
 import android.graphics.Color;
@@ -42,6 +43,7 @@ public class MainActivity extends Activity {
     private int currentPage = 0;
     private Bitmap[] bitmaps = null;
     private int currentBitmapPart = 0;
+    private String currentFilePath = null;
 
     private Button openBtn;
 
@@ -410,6 +412,7 @@ public class MainActivity extends Activity {
 
     private void openFile(String path) {
         try {
+            currentFilePath = path;
             zipFile = new ZipFile(path);
 
             Enumeration<? extends ZipEntry> entries = zipFile.entries();
@@ -431,19 +434,36 @@ public class MainActivity extends Activity {
             Collections.sort(pages);
 
             if (!pages.isEmpty()) {
-                loadPage(0, 1);
+                SharedPreferences prefs = getSharedPreferences("CBZReaderPrefs", MODE_PRIVATE);
+                int savedPage = prefs.getInt(currentFilePath + "_page", 0);
+                int savedPart = prefs.getInt(currentFilePath + "_part", 0);
+
+                if (savedPage < 0 || savedPage >= pages.size()) {
+                    savedPage = 0;
+                    savedPart = 0;
+                }
+
+                loadPage(savedPage, 1);
+
+                if (savedPart > 0 && bitmaps != null && savedPart < bitmaps.length) {
+                    currentBitmapPart = savedPart;
+                    renderBitmap(bitmaps[currentBitmapPart]);
+                }
+
                 pageSlider.setMax(pages.size() - 1);
                 String fileName = new java.io.File(path).getName();
                 fileNameText.setText(fileName);
             } else {
                 Toast.makeText(this, "No images found", Toast.LENGTH_LONG).show();
                 openBtn.setVisibility(View.VISIBLE);
+                currentFilePath = null;
             }
 
         } catch (Exception e) {
             e.printStackTrace();
             Toast.makeText(this, "Failed to open test.cbz: " + e.getMessage(), Toast.LENGTH_LONG).show();
             openBtn.setVisibility(View.VISIBLE);
+            currentFilePath = null;
         }
     }
 
@@ -461,6 +481,7 @@ public class MainActivity extends Activity {
         pages.clear();
         currentPage = 0;
         currentBitmapPart = 0;
+        currentFilePath = null;
         hideHUD();
     }
 
@@ -549,6 +570,17 @@ public class MainActivity extends Activity {
             }
         });
         updatePageTextCounter();
+        saveProgress();
+    }
+
+    private void saveProgress() {
+        if (currentFilePath != null) {
+            SharedPreferences prefs = getSharedPreferences("CBZReaderPrefs", MODE_PRIVATE);
+            SharedPreferences.Editor editor = prefs.edit();
+            editor.putInt(currentFilePath + "_page", currentPage);
+            editor.putInt(currentFilePath + "_part", currentBitmapPart);
+            editor.apply();
+        }
     }
 
     private void initBaseMatrix(Bitmap bitmap) {
