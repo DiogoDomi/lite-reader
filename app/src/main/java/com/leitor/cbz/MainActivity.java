@@ -359,6 +359,7 @@ public class MainActivity extends Activity {
         int pageIndex = currentPage + direction;
         if (pageIndex >= 0 && pageIndex < pages.size()) {
             loadPage(pageIndex, direction);
+            showPageTextCounter();
         }
     }
 
@@ -460,11 +461,17 @@ public class MainActivity extends Activity {
     private void showHUD() {
         topBar.setVisibility(View.VISIBLE);
         bottomBar.setVisibility(View.VISIBLE);
+        bottomBar.setBackgroundColor(Color.argb(220, 20, 20, 20));
+        pageCounter.setBackgroundColor(Color.TRANSPARENT);
+        pageSlider.setVisibility(View.VISIBLE);
+        pageCounter.setVisibility(View.VISIBLE);
     }
 
     private void hideHUD() {
         topBar.setVisibility(View.INVISIBLE);
         bottomBar.setVisibility(View.INVISIBLE);
+        pageSlider.setVisibility(View.INVISIBLE);
+        pageCounter.setVisibility(View.INVISIBLE);
     }
 
     private void toggleHUD() {
@@ -473,6 +480,19 @@ public class MainActivity extends Activity {
         } else {
             showHUD();
         }
+    }
+
+    private void showPageTextCounter() {
+        if (topBar.getVisibility() == View.VISIBLE) {
+            return;
+        }
+
+        topBar.setVisibility(View.INVISIBLE);
+        bottomBar.setVisibility(View.VISIBLE);
+        bottomBar.setBackgroundColor(Color.TRANSPARENT);
+        pageCounter.setBackgroundColor(Color.argb(220, 20, 20, 20));
+        pageSlider.setVisibility(View.INVISIBLE);
+        pageCounter.setVisibility(View.VISIBLE);
     }
 
     private void toggleFrame(boolean activate) {
@@ -515,6 +535,7 @@ public class MainActivity extends Activity {
             if (bitmaps != null && currentBitmapPart < bitmaps.length - 1) {
                 currentBitmapPart++;
                 renderBitmap(bitmaps[currentBitmapPart]);
+                showPageTextCounter();
             } else {
                 changePage(1);
             }
@@ -522,6 +543,7 @@ public class MainActivity extends Activity {
             if (bitmaps != null && currentBitmapPart > 0) {
                 currentBitmapPart--;
                 renderBitmap(bitmaps[currentBitmapPart]);
+                showPageTextCounter();
             } else {
                 changePage(-1);
             }
