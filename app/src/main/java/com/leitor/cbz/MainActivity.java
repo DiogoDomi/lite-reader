@@ -209,8 +209,14 @@ public class MainActivity extends Activity {
         pageSlider.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
             @Override
             public void onProgressChanged(SeekBar seekBar, int progress, boolean fromUser) {
-                if (fromUser) {
-                    loadPage(progress, 1);
+                if (fromUser && pageCounter != null) {
+                    String text = "";
+                    if (isRtlMode) {
+                        text = "[ " + pages.size() + " / " + (progress + 1) + " ]";
+                    } else {
+                        text = "[ " + (progress + 1) + " / " + pages.size() + " ]";
+                    }
+                    pageCounter.setText(text);
                 }
             }
 
@@ -222,6 +228,13 @@ public class MainActivity extends Activity {
             @Override
             public void onStopTrackingTouch(SeekBar seekBar) {
                 resetHideTimer();
+                int progress = seekBar.getProgress();
+                if (progress != currentPage) {
+                    int direction = progress > currentPage ? 1 : -1;
+                    loadPage(progress, direction);
+                } else {
+                    updatePageTextCounter();
+                }
             }
         });
 
@@ -437,6 +450,26 @@ public class MainActivity extends Activity {
                 SharedPreferences prefs = getSharedPreferences("CBZReaderPrefs", MODE_PRIVATE);
                 int savedPage = prefs.getInt(currentFilePath + "_page", 0);
                 int savedPart = prefs.getInt(currentFilePath + "_part", 0);
+                isSliceBitmapMode = prefs.getBoolean(currentFilePath + "_slice", false);
+                isRtlMode = prefs.getBoolean(currentFilePath + "_rtl", true);
+
+                if (sliceBitmapModeBtn != null) {
+                    sliceBitmapModeBtn.setText(isSliceBitmapMode ? "Slice: ON" : "Slice: OFF");
+                }
+
+                if (readingModeBtn != null) {
+                    readingModeBtn.setText(isRtlMode ? "RTL" : "LTR");
+                }
+
+                pageSlider.setScaleX(isRtlMode ? -1f : 1f);
+                bottomBar.removeAllViews();
+                if (isRtlMode) {
+                    bottomBar.addView(pageSlider);
+                    bottomBar.addView(pageCounter);
+                } else {
+                    bottomBar.addView(pageCounter);
+                    bottomBar.addView(pageSlider);
+                }
 
                 if (savedPage < 0 || savedPage >= pages.size()) {
                     savedPage = 0;
@@ -579,6 +612,8 @@ public class MainActivity extends Activity {
             SharedPreferences.Editor editor = prefs.edit();
             editor.putInt(currentFilePath + "_page", currentPage);
             editor.putInt(currentFilePath + "_part", currentBitmapPart);
+            editor.putBoolean(currentFilePath + "_slice", isSliceBitmapMode);
+            editor.putBoolean(currentFilePath + "_rtl", isRtlMode);
             editor.apply();
         }
     }
@@ -781,6 +816,7 @@ public class MainActivity extends Activity {
         }
 
         updatePageTextCounter();
+        saveProgress();
     }
 
     private void navigate(int touchSide) {
