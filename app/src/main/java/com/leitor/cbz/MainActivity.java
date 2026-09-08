@@ -9,7 +9,9 @@ import android.graphics.Matrix;
 import android.graphics.PointF;
 import android.os.Bundle;
 import android.os.Handler;
+import android.view.KeyEvent;
 import android.view.MotionEvent;
+import android.view.Surface;
 import android.view.View;
 import android.view.Gravity;
 import android.view.ViewTreeObserver;
@@ -48,11 +50,16 @@ public class MainActivity extends Activity {
     private Button openBtn;
 
     private FrameLayout topBar;
+    private LinearLayout settingsContainer;
     private Button sliceBitmapModeBtn;
-    private boolean isSliceBitmapMode = false;
-    private TextView fileNameText;
     private Button readingModeBtn;
+    private Button volKeysModeBtn;
+
+    private boolean isSliceBitmapMode = false;
     private boolean isRtlMode = true;
+    private boolean isVolKeysEnabled = false;
+
+    private TextView fileNameText;
 
     private LinearLayout bottomBar;
     private TextView pageCounter;
@@ -125,25 +132,6 @@ public class MainActivity extends Activity {
         topBar.setLayoutParams(topBarParams);
         topBar.setVisibility(View.INVISIBLE);
 
-        sliceBitmapModeBtn = new Button(this);
-        sliceBitmapModeBtn.setText(isSliceBitmapMode ? "Slice: ON" : "Slice: OFF");
-        sliceBitmapModeBtn.setBackgroundColor(Color.TRANSPARENT);
-        sliceBitmapModeBtn.setTextColor(Color.WHITE);
-        FrameLayout.LayoutParams sliceBitmapModeBtnParams = new FrameLayout.LayoutParams(
-            FrameLayout.LayoutParams.WRAP_CONTENT,
-            FrameLayout.LayoutParams.MATCH_PARENT
-        );
-        sliceBitmapModeBtnParams.gravity = Gravity.START | Gravity.CENTER_VERTICAL;
-        sliceBitmapModeBtn.setLayoutParams(sliceBitmapModeBtnParams);
-
-        sliceBitmapModeBtn.setOnClickListener(new View.OnClickListener() {
-            @Override
-            public void onClick(View v) {
-                toggleSlicePageMode();
-                resetHideTimer();
-            }
-        });
-
         fileNameText = new TextView(this);
         fileNameText.setTextColor(Color.WHITE);
         fileNameText.setTextSize(16f);
@@ -153,23 +141,61 @@ public class MainActivity extends Activity {
             FrameLayout.LayoutParams.WRAP_CONTENT,
             FrameLayout.LayoutParams.WRAP_CONTENT
         );
-        fileNameTextParams.gravity = Gravity.CENTER;
-        int fileNameTextPaddingPx = (int) (80 * getResources().getDisplayMetrics().density);
-        fileNameTextParams.setMargins(fileNameTextPaddingPx, 0, fileNameTextPaddingPx, 0);
+        fileNameTextParams.gravity = Gravity.START | Gravity.CENTER_VERTICAL;
+        int fileNameTextPaddingPx = (int) (15 * getResources().getDisplayMetrics().density);
+        int fileNameRightMarginPx = (int) (160 * getResources().getDisplayMetrics().density);
+        fileNameTextParams.setMargins(fileNameTextPaddingPx, 0, fileNameRightMarginPx, 0);
         fileNameText.setLayoutParams(fileNameTextParams);
 
-        readingModeBtn = new Button(this);
-        readingModeBtn.setText("RTL");
-        readingModeBtn.setBackgroundColor(Color.TRANSPARENT);
-        readingModeBtn.setTextColor(Color.WHITE);
-
-        FrameLayout.LayoutParams readingModeBtnParams = new FrameLayout.LayoutParams(
+        settingsContainer = new LinearLayout(this);
+        settingsContainer.setOrientation(LinearLayout.HORIZONTAL);
+        FrameLayout.LayoutParams settingsParams = new FrameLayout.LayoutParams(
             FrameLayout.LayoutParams.WRAP_CONTENT,
             FrameLayout.LayoutParams.MATCH_PARENT
         );
-        readingModeBtnParams.gravity = Gravity.END | Gravity.CENTER_VERTICAL;
-        readingModeBtn.setLayoutParams(readingModeBtnParams);
+        settingsParams.gravity = Gravity.END | Gravity.CENTER_VERTICAL;
+        settingsContainer.setLayoutParams(settingsParams);
 
+        int btnMarginPx = (int) (6 * getResources().getDisplayMetrics().density);
+        int btnPaddingPx = (int) (8 * getResources().getDisplayMetrics().density);
+        LinearLayout.LayoutParams btnLayoutConfig = new LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.WRAP_CONTENT,
+            LinearLayout.LayoutParams.WRAP_CONTENT
+        );
+        btnLayoutConfig.gravity = Gravity.CENTER_VERTICAL;
+        btnLayoutConfig.setMargins(btnMarginPx, 0, btnMarginPx, 0);
+
+        sliceBitmapModeBtn = new Button(this);
+        sliceBitmapModeBtn.setLayoutParams(btnLayoutConfig);
+        sliceBitmapModeBtn.setText("SLC");
+        sliceBitmapModeBtn.setBackgroundColor(Color.TRANSPARENT);
+        sliceBitmapModeBtn.setTextColor(isSliceBitmapMode ? Color.WHITE : Color.GRAY);
+        sliceBitmapModeBtn.setGravity(Gravity.CENTER);
+        sliceBitmapModeBtn.setPadding(btnPaddingPx, btnPaddingPx, btnPaddingPx, btnPaddingPx);
+        sliceBitmapModeBtn.setTextSize(14f);
+        sliceBitmapModeBtn.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                toggleSlicePageMode();
+                resetHideTimer();
+            }
+        });
+        sliceBitmapModeBtn.setOnLongClickListener(new View.OnLongClickListener() {
+            @Override
+            public boolean onLongClick(View v) {
+                Toast.makeText(MainActivity.this, "Slice Mode", Toast.LENGTH_SHORT).show();
+                return true;
+            }
+        });
+
+        readingModeBtn = new Button(this);
+        readingModeBtn.setLayoutParams(btnLayoutConfig);
+        readingModeBtn.setText(isRtlMode ? "RTL" : "LTR");
+        readingModeBtn.setBackgroundColor(Color.TRANSPARENT);
+        readingModeBtn.setTextColor(Color.WHITE);
+        readingModeBtn.setGravity(Gravity.CENTER);
+        readingModeBtn.setPadding(btnPaddingPx, btnPaddingPx, btnPaddingPx, btnPaddingPx);
+        readingModeBtn.setTextSize(14f);
         readingModeBtn.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
@@ -177,10 +203,44 @@ public class MainActivity extends Activity {
                 resetHideTimer();
             }
         });
+        readingModeBtn.setOnLongClickListener(new View.OnLongClickListener() {
+            @Override
+            public boolean onLongClick(View v) {
+                Toast.makeText(MainActivity.this, "Reading Direction", Toast.LENGTH_SHORT).show();
+                return true;
+            }
+        });
 
-        topBar.addView(sliceBitmapModeBtn);
+        volKeysModeBtn = new Button(this);
+        volKeysModeBtn.setLayoutParams(btnLayoutConfig);
+        volKeysModeBtn.setText("VOL");
+        volKeysModeBtn.setBackgroundColor(Color.TRANSPARENT);
+        volKeysModeBtn.setTextColor(isVolKeysEnabled ? Color.WHITE : Color.GRAY);
+        volKeysModeBtn.setGravity(Gravity.CENTER);
+        volKeysModeBtn.setPadding(btnPaddingPx, btnPaddingPx, btnPaddingPx, btnPaddingPx);
+        volKeysModeBtn.setTextSize(14f);
+        volKeysModeBtn.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                isVolKeysEnabled = !isVolKeysEnabled;
+                volKeysModeBtn.setTextColor(isVolKeysEnabled ? Color.WHITE : Color.GRAY);
+                resetHideTimer();
+            }
+        });
+        volKeysModeBtn.setOnLongClickListener(new View.OnLongClickListener() {
+            @Override
+            public boolean onLongClick(View v) {
+                Toast.makeText(MainActivity.this, "Volume Key Navigation", Toast.LENGTH_SHORT).show();
+                return true;
+            }
+        });
+
+        settingsContainer.addView(sliceBitmapModeBtn);
+        settingsContainer.addView(readingModeBtn);
+        settingsContainer.addView(volKeysModeBtn);
+
         topBar.addView(fileNameText);
-        topBar.addView(readingModeBtn);
+        topBar.addView(settingsContainer);
         mainLayout.addView(topBar);
 
         bottomBar = new LinearLayout(this);
@@ -342,6 +402,45 @@ public class MainActivity extends Activity {
     }
 
     @Override
+    public boolean onKeyDown(int keyCode, KeyEvent event) {
+        if (isVolKeysEnabled && zipFile != null) {
+            if (keyCode == KeyEvent.KEYCODE_VOLUME_DOWN || keyCode == KeyEvent.KEYCODE_VOLUME_UP) {
+                int rotation = getWindowManager().getDefaultDisplay().getRotation();
+
+                int actionNext = KeyEvent.KEYCODE_VOLUME_UP;
+                int actionPrev = KeyEvent.KEYCODE_VOLUME_DOWN;
+
+                if (rotation == Surface.ROTATION_90 || rotation == Surface.ROTATION_180) {
+                    actionNext = KeyEvent.KEYCODE_VOLUME_DOWN;
+                    actionPrev = KeyEvent.KEYCODE_VOLUME_UP;
+                }
+
+                int forceNext = isRtlMode ? 1 : -1;
+                int forcePrev = isRtlMode ? -1 : 1;
+
+                if (keyCode == actionNext) {
+                    navigate(forceNext);
+                    return true;
+                } else if (keyCode == actionPrev) {
+                    navigate(forcePrev);
+                    return true;
+                }
+            }
+        }
+        return super.onKeyDown(keyCode, event);
+    }
+
+    @Override
+    public boolean onKeyUp(int keyCode, KeyEvent event) {
+        if (isVolKeysEnabled && zipFile != null) {
+            if (keyCode == KeyEvent.KEYCODE_VOLUME_DOWN || keyCode == KeyEvent.KEYCODE_VOLUME_UP) {
+                return true;
+            }
+        }
+        return super.onKeyUp(keyCode, event);
+    }
+
+    @Override
     protected void onActivityResult(int requestCode, int resultCode, Intent data) {
         super.onActivityResult(requestCode, resultCode, data);
         if (requestCode == 1001 && resultCode == RESULT_OK && data != null) {
@@ -455,11 +554,16 @@ public class MainActivity extends Activity {
                 isRtlMode = prefs.getBoolean(currentFilePath + "_rtl", true);
 
                 if (sliceBitmapModeBtn != null) {
-                    sliceBitmapModeBtn.setText(isSliceBitmapMode ? "Slice: ON" : "Slice: OFF");
+                    sliceBitmapModeBtn.setTextColor(isSliceBitmapMode ? Color.WHITE : Color.GRAY);
                 }
 
                 if (readingModeBtn != null) {
                     readingModeBtn.setText(isRtlMode ? "RTL" : "LTR");
+                }
+
+                isVolKeysEnabled = false;
+                if (volKeysModeBtn != null) {
+                    volKeysModeBtn.setTextColor(Color.GRAY);
                 }
 
                 pageSlider.setScaleX(isRtlMode ? -1f : 1f);
@@ -562,7 +666,7 @@ public class MainActivity extends Activity {
         isSliceBitmapMode = !isSliceBitmapMode;
 
         if (sliceBitmapModeBtn != null) {
-            sliceBitmapModeBtn.setText(isSliceBitmapMode ? "Slice: ON" : "Slice: OFF");
+            sliceBitmapModeBtn.setTextColor(isSliceBitmapMode ? Color.WHITE : Color.GRAY);
         }
 
         if (zipFile != null && !pages.isEmpty()) {
