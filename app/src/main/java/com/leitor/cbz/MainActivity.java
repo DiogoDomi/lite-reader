@@ -54,10 +54,12 @@ public class MainActivity extends Activity {
     private Button sliceBitmapModeBtn;
     private Button readingModeBtn;
     private Button volKeysModeBtn;
+    private Button fullscreenModeBtn;
 
     private boolean isSliceBitmapMode = false;
     private boolean isRtlMode = true;
     private boolean isVolKeysEnabled = false;
+    private boolean isFullscreenMode = true;
 
     private TextView fileNameText;
 
@@ -86,6 +88,10 @@ public class MainActivity extends Activity {
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         getWindow().addFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+
+        SharedPreferences globalPrefs = getSharedPreferences("GlobalPrefs", MODE_PRIVATE);
+        isVolKeysEnabled = globalPrefs.getBoolean("vol_keys", false);
+        isFullscreenMode = globalPrefs.getBoolean("fullscreen_mode", true);
 
         FrameLayout mainLayout = new FrameLayout(this);
         mainLayout.setBackgroundColor(Color.WHITE);
@@ -143,7 +149,7 @@ public class MainActivity extends Activity {
         );
         fileNameTextParams.gravity = Gravity.START | Gravity.CENTER_VERTICAL;
         int fileNameTextPaddingPx = (int) (15 * getResources().getDisplayMetrics().density);
-        int fileNameRightMarginPx = (int) (160 * getResources().getDisplayMetrics().density);
+        int fileNameRightMarginPx = (int) (200 * getResources().getDisplayMetrics().density);
         fileNameTextParams.setMargins(fileNameTextPaddingPx, 0, fileNameRightMarginPx, 0);
         fileNameText.setLayoutParams(fileNameTextParams);
 
@@ -224,6 +230,9 @@ public class MainActivity extends Activity {
             public void onClick(View v) {
                 isVolKeysEnabled = !isVolKeysEnabled;
                 volKeysModeBtn.setTextColor(isVolKeysEnabled ? Color.WHITE : Color.GRAY);
+                SharedPreferences.Editor editor = getSharedPreferences("GlobalPrefs", MODE_PRIVATE).edit();
+                editor.putBoolean("vol_keys", isVolKeysEnabled);
+                editor.apply();
                 resetHideTimer();
             }
         });
@@ -235,9 +244,42 @@ public class MainActivity extends Activity {
             }
         });
 
+        fullscreenModeBtn = new Button(this);
+        fullscreenModeBtn.setLayoutParams(btnLayoutConfig);
+        fullscreenModeBtn.setText("FUL");
+        fullscreenModeBtn.setBackgroundColor(Color.TRANSPARENT);
+        fullscreenModeBtn.setTextColor(isFullscreenMode ? Color.WHITE : Color.GRAY);
+        fullscreenModeBtn.setGravity(Gravity.CENTER);
+        fullscreenModeBtn.setPadding(btnPaddingPx, btnPaddingPx, btnPaddingPx, btnPaddingPx);
+        fullscreenModeBtn.setTextSize(14f);
+        fullscreenModeBtn.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                isFullscreenMode = !isFullscreenMode;
+                fullscreenModeBtn.setTextColor(isFullscreenMode ? Color.WHITE : Color.GRAY);
+                SharedPreferences.Editor editor = getSharedPreferences("GlobalPrefs", MODE_PRIVATE).edit();
+                editor.putBoolean("fullscreen_mode", isFullscreenMode);
+                editor.apply();
+
+                if (topBar.getVisibility() == View.INVISIBLE) {
+                    hideHUD();
+                } else {
+                    resetHideTimer();
+                }
+            }
+        });
+        fullscreenModeBtn.setOnLongClickListener(new View.OnLongClickListener() {
+            @Override
+            public boolean onLongClick(View v) {
+                Toast.makeText(MainActivity.this, "Immersive Mode", Toast.LENGTH_SHORT).show();
+                return true;
+            }
+        });
+
         settingsContainer.addView(sliceBitmapModeBtn);
         settingsContainer.addView(readingModeBtn);
         settingsContainer.addView(volKeysModeBtn);
+        settingsContainer.addView(fullscreenModeBtn);
 
         topBar.addView(fileNameText);
         topBar.addView(settingsContainer);
@@ -483,7 +525,8 @@ public class MainActivity extends Activity {
     public void onConfigurationChanged(final android.content.res.Configuration newConfig) {
         super.onConfigurationChanged(newConfig);
 
-        toggleFrame(bottomBar.getVisibility() == View.VISIBLE);
+        toggleFrame(zipFile != null);
+
         imageView.requestLayout();
 
         final boolean isLandscape = newConfig.orientation == Configuration.ORIENTATION_LANDSCAPE;
@@ -849,6 +892,8 @@ public class MainActivity extends Activity {
         pageSlider.setVisibility(View.VISIBLE);
         pageCounter.setVisibility(View.VISIBLE);
 
+        getWindow().getDecorView().setSystemUiVisibility(View.SYSTEM_UI_FLAG_VISIBLE);
+
         resetHideTimer();
     }
 
@@ -857,6 +902,12 @@ public class MainActivity extends Activity {
         bottomBar.setVisibility(View.INVISIBLE);
         pageSlider.setVisibility(View.INVISIBLE);
         pageCounter.setVisibility(View.INVISIBLE);
+
+        if (isFullscreenMode) {
+            getWindow().getDecorView().setSystemUiVisibility(View.SYSTEM_UI_FLAG_LOW_PROFILE);
+        } else {
+            getWindow().getDecorView().setSystemUiVisibility(View.SYSTEM_UI_FLAG_VISIBLE);
+        }
 
         hideHandler.removeCallbacks(hideRunnable);
     }
@@ -881,6 +932,10 @@ public class MainActivity extends Activity {
         pageCounter.setBackgroundColor(Color.argb(220, 20, 20, 20));
         pageSlider.setVisibility(View.INVISIBLE);
         pageCounter.setVisibility(View.VISIBLE);
+
+        if (isFullscreenMode) {
+            getWindow().getDecorView().setSystemUiVisibility(View.SYSTEM_UI_FLAG_LOW_PROFILE);
+        }
 
         resetHideTimer();
     }
