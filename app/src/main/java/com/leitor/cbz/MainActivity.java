@@ -27,6 +27,7 @@ import android.net.Uri;
 import android.database.Cursor;
 import android.provider.MediaStore;
 import android.content.res.Configuration;
+import android.view.GestureDetector;
 
 import java.io.InputStream;
 import java.util.ArrayList;
@@ -92,6 +93,8 @@ public class MainActivity extends Activity {
     private boolean isPanning = false;
     private long downTime = 0;
     private int startDimAlpha = 0;
+
+    private GestureDetector gestureDetector;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -418,9 +421,39 @@ public class MainActivity extends Activity {
 
         setContentView(mainLayout);
 
+        gestureDetector = new GestureDetector(this, new GestureDetector.SimpleOnGestureListener() {
+            @Override
+            public boolean onDoubleTap(MotionEvent e) {
+                if (bitmaps == null || bitmaps.length <= currentBitmapPart || bitmaps[currentBitmapPart] == null) {
+                    return false;
+                }
+
+                matrix.getValues(matrixValues);
+                float currentScale = matrixValues[Matrix.MSCALE_X];
+
+                if (currentScale < baseScale * 1.1f) {
+                    float targetScale = 2.5f;
+                    matrix.postScale(targetScale, targetScale, e.getX(), e.getY());
+                    limitZoom(matrix);
+                    limitDrag(matrix, imageView);
+                } else {
+                    if (bitmaps != null && currentBitmapPart >= 0 && currentBitmapPart < bitmaps.length) {
+                        initBaseMatrix(bitmaps[currentBitmapPart]);
+                    }
+                }
+                imageView.setImageMatrix(matrix);
+                return true;
+            }
+        });
+
         imageView.setOnTouchListener(new View.OnTouchListener() {
             @Override
             public boolean onTouch(View v, MotionEvent event) {
+
+                if (gestureDetector.onTouchEvent(event)) {
+                    return true;
+                }
+
                 if (bitmaps == null || bitmaps.length == 0 || bitmaps[currentBitmapPart] == null) {
                     return false;
                 }
@@ -856,16 +889,21 @@ public class MainActivity extends Activity {
     private void renderBitmap(Bitmap bitmap) {
         imageView.setImageBitmap(bitmap);
         final Bitmap bmp = bitmap;
-        imageView.getViewTreeObserver().addOnGlobalLayoutListener(new ViewTreeObserver.OnGlobalLayoutListener() {
-            @SuppressWarnings("deprecation")
-            @Override
-            public void onGlobalLayout() {
-                if (imageView.getWidth() > 0 && imageView.getHeight() > 0) {
-                    imageView.getViewTreeObserver().removeGlobalOnLayoutListener(this);
-                    initBaseMatrix(bmp);
+
+        if (imageView.getWidth() > 0 && imageView.getHeight() > 0) {
+            initBaseMatrix(bmp);
+        } else {
+            imageView.getViewTreeObserver().addOnGlobalLayoutListener(new ViewTreeObserver.OnGlobalLayoutListener() {
+                @SuppressWarnings("deprecation")
+                @Override
+                public void onGlobalLayout() {
+                    if (imageView.getWidth() > 0 && imageView.getHeight() > 0) {
+                        imageView.getViewTreeObserver().removeGlobalOnLayoutListener(this);
+                        initBaseMatrix(bmp);
+                    }
                 }
-            }
-        });
+            });
+        }
         updatePageTextCounter();
         saveProgress();
     }
