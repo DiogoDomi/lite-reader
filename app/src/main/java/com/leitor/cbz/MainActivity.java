@@ -4,12 +4,9 @@ import android.app.Activity;
 import android.content.SharedPreferences;
 import android.graphics.Bitmap;
 import android.graphics.Color;
-import android.graphics.Matrix;
-import android.graphics.PointF;
 import android.os.Bundle;
 import android.os.Handler;
 import android.view.KeyEvent;
-import android.view.MotionEvent;
 import android.view.Surface;
 import android.view.View;
 import android.view.Gravity;
@@ -26,18 +23,16 @@ import android.net.Uri;
 import android.database.Cursor;
 import android.provider.MediaStore;
 import android.content.res.Configuration;
-import android.view.GestureDetector;
 
-// NOSSOS IMPORTS NOVOS
 import com.leitor.cbz.engine.BookEngine;
 import com.leitor.cbz.engine.CbzEngine;
+import com.leitor.cbz.ui.TouchManager;
 
 public class MainActivity extends Activity {
 
     private ImageView imageView;
-
-    // INSTÂNCIA DO NOSSO MOTOR (Isso esconde toda a lógica feia!)
     private BookEngine bookEngine;
+    private TouchManager touchManager;
 
     private int currentPage = 0;
     private Bitmap[] bitmaps = null;
@@ -45,7 +40,6 @@ public class MainActivity extends Activity {
     private String currentFilePath = null;
 
     private Button openBtn;
-
     private FrameLayout topBar;
     private LinearLayout settingsContainer;
     private Button sliceBitmapModeBtn;
@@ -62,35 +56,13 @@ public class MainActivity extends Activity {
     private int dimAlpha = 130;
 
     private TextView fileNameText;
-
     private LinearLayout bottomBar;
     private TextView pageCounter;
     private SeekBar pageSlider;
-
     private View dimOverlay;
 
     private Handler hideHandler = new Handler();
     private Runnable hideRunnable;
-
-    private Matrix matrix = new Matrix();
-    private Matrix savedMatrix = new Matrix();
-
-    private static final int NONE = 0;
-    private static final int DRAG = 1;
-    private static final int ZOOM = 2;
-    private static final int BRIGHTNESS = 3;
-
-    private int mode = NONE;
-    private PointF start = new PointF();
-    private PointF mid = new PointF();
-    private float oldDist = 1f;
-    private float[] matrixValues = new float[9];
-    private float baseScale = 1f;
-    private boolean isPanning = false;
-    private long downTime = 0;
-    private int startDimAlpha = 0;
-
-    private GestureDetector gestureDetector;
 
     private long lastNavTime = 0;
     private static final int NAV_COOLDOWN_MS = 250;
@@ -273,6 +245,9 @@ public class MainActivity extends Activity {
                     dimOverlay.setBackgroundColor(isDimMode ? Color.argb(dimAlpha, 0, 0, 0) : Color.TRANSPARENT);
                 }
                 updateButtonColors();
+                if (touchManager != null) {
+                    touchManager.setDimState(isDimMode, dimAlpha);
+                }
                 SharedPreferences.Editor editor = getSharedPreferences("GlobalPrefs", MODE_PRIVATE).edit();
                 editor.putBoolean("dim_mode", isDimMode);
                 editor.apply();
@@ -394,182 +369,47 @@ public class MainActivity extends Activity {
 
         setContentView(mainLayout);
 
-        gestureDetector = new GestureDetector(this, new GestureDetector.SimpleOnGestureListener() {
+        touchManager = new TouchManager(this, imageView, new TouchManager.TouchCallback() {
             @Override
-            public boolean onDoubleTap(MotionEvent e) {
-                if (bitmaps == null || bitmaps.length <= currentBitmapPart || bitmaps[currentBitmapPart] == null) {
-                    return false;
-                }
+            public void onNavigate(int direction) {
+                navigate(direction);
+            }
 
-                matrix.getValues(matrixValues);
-                float currentScale = matrixValues[Matrix.MSCALE_X];
-
-                if (currentScale < baseScale * 1.1f) {
-                    float targetScale = 2.5f;
-                    matrix.postScale(targetScale, targetScale, e.getX(), e.getY());
-                    limitZoom(matrix);
-                    limitDrag(matrix, imageView);
-                } else {
-                    if (bitmaps != null && currentBitmapPart >= 0 && currentBitmapPart < bitmaps.length) {
-                        initBaseMatrix(bitmaps[currentBitmapPart]);
-                    }
+            @Override
+            public void onToggleHUD() {
+                if (bookEngine != null) {
+                    toggleHUD();
                 }
-                imageView.setImageMatrix(matrix);
-                return true;
+            }
+
+            @Override
+            public void onBrightnessChange(int newAlpha) {
+                dimAlpha = newAlpha;
+                if (dimOverlay != null && isDimMode) {
+                    dimOverlay.setBackgroundColor(Color.argb(dimAlpha, 0, 0, 0));
+                }
+            }
+
+            @Override
+            public void onBrightnessSave(int finalAlpha) {
+                dimAlpha = finalAlpha;
+                SharedPreferences.Editor editor = getSharedPreferences("GlobalPrefs", MODE_PRIVATE).edit();
+                editor.putInt("dim_alpha", dimAlpha);
+                editor.apply();
             }
         });
 
-        imageView.setOnTouchListener(new View.OnTouchListener() {
-            @Override
-            public boolean onTouch(View v, MotionEvent event) {
-
-                if (gestureDetector.onTouchEvent(event)) {
-                    return true;
-                }
-
-                if (bitmaps == null || bitmaps.length == 0 || bitmaps[currentBitmapPart] == null) {
-                    return false;
-                }
-
-                ImageView view = (ImageView) v;
-
-                switch (event.getAction() & MotionEvent.ACTION_MASK) {
-                    case MotionEvent.ACTION_DOWN:
-                        float screenWidthDown = v.getWidth();
-                        float touchXDown = event.getX();
-
-                        if (isDimMode && touchXDown <= screenWidthDown * 0.15f) {
-                            mode = BRIGHTNESS;
-                            start.set(event.getX(), event.getY());
-                            startDimAlpha = dimAlpha;
-                            isPanning = false;
-                            downTime = System.currentTimeMillis();
-                            break;
-                        }
-
-                        savedMatrix.set(matrix);
-                        start.set(event.getX(), event.getY());
-                        mode = DRAG;
-                        isPanning = false;
-                        downTime = System.currentTimeMillis();
-                        break;
-                    case MotionEvent.ACTION_POINTER_DOWN:
-                        oldDist = spacing(event);
-                        if (oldDist > 10f) {
-                            savedMatrix.set(matrix);
-                            midPoint(mid, event);
-                            mode = ZOOM;
-                        }
-                        break;
-                    case MotionEvent.ACTION_UP:
-                    case MotionEvent.ACTION_POINTER_UP:
-                        if (mode == BRIGHTNESS) {
-                            long clickDuration = System.currentTimeMillis() - downTime;
-                            float deltaX = Math.abs(event.getX() - start.x);
-                            float deltaY = Math.abs(event.getY() - start.y);
-
-                            if (!isPanning && clickDuration < 300 && deltaX < 20 && deltaY < 20) {
-                                float screenWidth = v.getWidth();
-                                float touchXAxis = event.getX();
-                                if (touchXAxis <= screenWidth * 0.25f) {
-                                    navigate(1);
-                                } else if (touchXAxis >= screenWidth * 0.75f) {
-                                    navigate(-1);
-                                } else {
-                                    if (bookEngine != null) {
-                                        toggleHUD();
-                                    }
-                                }
-                            } else {
-                                SharedPreferences.Editor editor = getSharedPreferences("GlobalPrefs", MODE_PRIVATE).edit();
-                                editor.putInt("dim_alpha", dimAlpha);
-                                editor.apply();
-                            }
-                        } else if (mode == DRAG) {
-                            long clickDuration = System.currentTimeMillis() - downTime;
-                            float deltaX = Math.abs(event.getX() - start.x);
-                            float deltaY = Math.abs(event.getY() - start.y);
-
-                            if (!isPanning && clickDuration < 300 && deltaX < 20 && deltaY < 20) {
-                                float screenWidth = v.getWidth();
-                                float touchXAxis = event.getX();
-                                if (touchXAxis <= screenWidth * 0.25f) {
-                                    navigate(1);
-                                } else if (touchXAxis >= screenWidth * 0.75f) {
-                                    navigate(-1);
-                                } else {
-                                    if (bookEngine != null) {
-                                        toggleHUD();
-                                    }
-                                }
-                            }
-                        }
-                        mode = NONE;
-                        break;
-                    case MotionEvent.ACTION_MOVE:
-                        if (mode == BRIGHTNESS) {
-                            float deltaY = event.getY() - start.y;
-                            float screenHeight = v.getHeight();
-
-                            if (Math.abs(deltaY) > 20) {
-                                isPanning = true;
-                            }
-
-                            float alphaChange = (deltaY / screenHeight) * 255f;
-                            int newAlpha = startDimAlpha + (int) alphaChange;
-
-                            if (newAlpha < 0) newAlpha = 0;
-                            if (newAlpha > 235) newAlpha = 235;
-
-                            dimAlpha = newAlpha;
-
-                            if (dimOverlay != null && isDimMode) {
-                                dimOverlay.setBackgroundColor(Color.argb(dimAlpha, 0, 0, 0));
-                            }
-                            return true;
-
-                        } else if (mode == DRAG) {
-                            float deltaX = event.getX() - start.x;
-                            float deltaY = event.getY() - start.y;
-                            if (Math.abs(deltaX) > 20 || Math.abs(deltaY) > 20) {
-                                isPanning = true;
-                            }
-                            matrix.set(savedMatrix);
-                            matrix.postTranslate(deltaX, deltaY);
-                            limitDrag(matrix, view);
-                        } else if (mode == ZOOM) {
-                            float newDist = spacing(event);
-                            if (newDist > 10f) {
-                                matrix.set(savedMatrix);
-                                float scale = newDist / oldDist;
-                                matrix.postScale(scale, scale, mid.x, mid.y);
-                                limitZoom(matrix);
-                                limitDrag(matrix, view);
-                            }
-                        }
-                        break;
-                }
-                view.setImageMatrix(matrix);
-                return true;
-            }
-        });
+        touchManager.setDimState(isDimMode, dimAlpha);
+        imageView.setOnTouchListener(touchManager);
     }
 
     private void updateButtonColors() {
         int colorOff = isDimMode ? Color.LTGRAY : Color.GRAY;
 
-        if (sliceBitmapModeBtn != null) {
-            sliceBitmapModeBtn.setTextColor(isSliceBitmapMode ? Color.WHITE : colorOff);
-        }
-        if (volKeysModeBtn != null) {
-            volKeysModeBtn.setTextColor(isVolKeysEnabled ? Color.WHITE : colorOff);
-        }
-        if (fullscreenModeBtn != null) {
-            fullscreenModeBtn.setTextColor(isFullscreenMode ? Color.WHITE : colorOff);
-        }
-        if (dimModeBtn != null) {
-            dimModeBtn.setTextColor(isDimMode ? Color.WHITE : colorOff);
-        }
+        if (sliceBitmapModeBtn != null) sliceBitmapModeBtn.setTextColor(isSliceBitmapMode ? Color.WHITE : colorOff);
+        if (volKeysModeBtn != null) volKeysModeBtn.setTextColor(isVolKeysEnabled ? Color.WHITE : colorOff);
+        if (fullscreenModeBtn != null) fullscreenModeBtn.setTextColor(isFullscreenMode ? Color.WHITE : colorOff);
+        if (dimModeBtn != null) dimModeBtn.setTextColor(isDimMode ? Color.WHITE : colorOff);
     }
 
     @Override
@@ -577,7 +417,6 @@ public class MainActivity extends Activity {
         if (isVolKeysEnabled && bookEngine != null) {
             if (keyCode == KeyEvent.KEYCODE_VOLUME_DOWN || keyCode == KeyEvent.KEYCODE_VOLUME_UP) {
                 int rotation = getWindowManager().getDefaultDisplay().getRotation();
-
                 int actionNext = KeyEvent.KEYCODE_VOLUME_UP;
                 int actionPrev = KeyEvent.KEYCODE_VOLUME_DOWN;
 
@@ -653,11 +492,8 @@ public class MainActivity extends Activity {
     @Override
     public void onConfigurationChanged(final android.content.res.Configuration newConfig) {
         super.onConfigurationChanged(newConfig);
-
         toggleFrame(bookEngine != null);
-
         imageView.requestLayout();
-
         final boolean isLandscape = newConfig.orientation == Configuration.ORIENTATION_LANDSCAPE;
 
         imageView.getViewTreeObserver().addOnGlobalLayoutListener(new ViewTreeObserver.OnGlobalLayoutListener() {
@@ -671,7 +507,7 @@ public class MainActivity extends Activity {
                     if (viewIsLandscape == isLandscape) {
                         imageView.getViewTreeObserver().removeGlobalOnLayoutListener(this);
                         if (bitmaps != null && currentBitmapPart >= 0 && currentBitmapPart < bitmaps.length) {
-                            initBaseMatrix(bitmaps[currentBitmapPart]);
+                            touchManager.applyBaseMatrix(bitmaps[currentBitmapPart]);
                         }
                     }
                 }
@@ -680,9 +516,7 @@ public class MainActivity extends Activity {
     }
 
     private String getPath(Uri uri) {
-        if ("file".equalsIgnoreCase(uri.getScheme())) {
-            return uri.getPath();
-        }
+        if ("file".equalsIgnoreCase(uri.getScheme())) return uri.getPath();
         String[] projection = { MediaStore.Images.Media.DATA };
         Cursor cursor = getContentResolver().query(uri, projection, null, null, null);
         if (cursor != null) {
@@ -699,7 +533,6 @@ public class MainActivity extends Activity {
         try {
             currentFilePath = path;
 
-            // INICIALIZA O MOTOR! (A Interface não sabe que é um ZIP, só manda ler)
             bookEngine = new CbzEngine();
             bookEngine.openFile(path);
 
@@ -711,9 +544,7 @@ public class MainActivity extends Activity {
 
             bookEngine.setSliceMode(isSliceBitmapMode);
 
-            if (readingModeBtn != null) {
-                readingModeBtn.setText(isRtlMode ? "RTL" : "LTR");
-            }
+            if (readingModeBtn != null) readingModeBtn.setText(isRtlMode ? "RTL" : "LTR");
 
             isVolKeysEnabled = false;
             updateButtonColors();
@@ -757,7 +588,12 @@ public class MainActivity extends Activity {
             bookEngine.destroy();
             bookEngine = null;
         }
-        recycleCurrentBitmaps();
+        if (bitmaps != null) {
+            for (int i = 0; i < bitmaps.length; i++) {
+                if (bitmaps[i] != null && !bitmaps[i].isRecycled()) bitmaps[i].recycle();
+                bitmaps[i] = null;
+            }
+        }
         currentPage = 0;
         currentBitmapPart = 0;
         currentFilePath = null;
@@ -775,9 +611,13 @@ public class MainActivity extends Activity {
     private void loadPage(int pageIndex, int direction) {
         if (bookEngine == null) return;
 
-        recycleCurrentBitmaps();
+        if (bitmaps != null) {
+            for (int i = 0; i < bitmaps.length; i++) {
+                if (bitmaps[i] != null && !bitmaps[i].isRecycled()) bitmaps[i].recycle();
+                bitmaps[i] = null;
+            }
+        }
 
-        // Pede a imagem mastigada pro motor
         bitmaps = bookEngine.loadPage(pageIndex);
         currentPage = pageIndex;
 
@@ -796,14 +636,9 @@ public class MainActivity extends Activity {
 
     private void toggleSlicePageMode() {
         isSliceBitmapMode = !isSliceBitmapMode;
-        if (bookEngine != null) {
-            bookEngine.setSliceMode(isSliceBitmapMode);
-        }
+        if (bookEngine != null) bookEngine.setSliceMode(isSliceBitmapMode);
         updateButtonColors();
-
-        if (bookEngine != null) {
-            loadPage(currentPage, 1);
-        }
+        if (bookEngine != null) loadPage(currentPage, 1);
     }
 
     private void renderBitmap(Bitmap bitmap) {
@@ -811,7 +646,7 @@ public class MainActivity extends Activity {
         final Bitmap bmp = bitmap;
 
         if (imageView.getWidth() > 0 && imageView.getHeight() > 0) {
-            initBaseMatrix(bmp);
+            touchManager.applyBaseMatrix(bmp);
         } else {
             imageView.getViewTreeObserver().addOnGlobalLayoutListener(new ViewTreeObserver.OnGlobalLayoutListener() {
                 @SuppressWarnings("deprecation")
@@ -819,7 +654,7 @@ public class MainActivity extends Activity {
                 public void onGlobalLayout() {
                     if (imageView.getWidth() > 0 && imageView.getHeight() > 0) {
                         imageView.getViewTreeObserver().removeGlobalOnLayoutListener(this);
-                        initBaseMatrix(bmp);
+                        touchManager.applyBaseMatrix(bmp);
                     }
                 }
             });
@@ -840,97 +675,6 @@ public class MainActivity extends Activity {
         }
     }
 
-    private void initBaseMatrix(Bitmap bitmap) {
-        if (bitmap == null || imageView.getWidth() == 0 || imageView.getHeight() == 0) return;
-
-        float vWidth = imageView.getWidth();
-        float vHeight = imageView.getHeight();
-        float dWidth = bitmap.getWidth();
-        float dHeight = bitmap.getHeight();
-
-        if (dWidth * vHeight > vWidth * dHeight) {
-            baseScale = vWidth / dWidth;
-        } else {
-            baseScale = vHeight / dHeight;
-        }
-
-        float dx = (vWidth - dWidth * baseScale) / 2f;
-        float dy = (vHeight - dHeight * baseScale) / 2f;
-
-        matrix.setScale(baseScale, baseScale);
-        matrix.postTranslate(dx, dy);
-        imageView.setImageMatrix(matrix);
-        imageView.invalidate();
-    }
-
-    private float spacing(MotionEvent event) {
-        float x = event.getX(0) - event.getX(1);
-        float y = event.getY(0) - event.getY(1);
-        return (float) Math.sqrt(x * x + y * y);
-    }
-
-    private void midPoint(PointF point, MotionEvent event) {
-        float x = event.getX(0) + event.getX(1);
-        float y = event.getY(0) + event.getY(1);
-        point.set(x / 2f, y / 2f);
-    }
-
-    private void limitZoom(Matrix m) {
-        m.getValues(matrixValues);
-        float scaleX = matrixValues[Matrix.MSCALE_X];
-        if (scaleX < baseScale) {
-            float target = baseScale / scaleX;
-            m.postScale(target, target, mid.x, mid.y);
-        } else if (scaleX > baseScale * 4f) {
-            float target = (baseScale * 4f) / scaleX;
-            m.postScale(target, target, mid.x, mid.y);
-        }
-    }
-
-    private void limitDrag(Matrix m, ImageView view) {
-        if (bitmaps == null || bitmaps.length <= currentBitmapPart) return;
-        Bitmap currentBmp = bitmaps[currentBitmapPart];
-        if (currentBmp == null) return;
-
-        m.getValues(matrixValues);
-        float transX = matrixValues[Matrix.MTRANS_X];
-        float transY = matrixValues[Matrix.MTRANS_Y];
-        float scaleX = matrixValues[Matrix.MSCALE_X];
-        float scaleY = matrixValues[Matrix.MSCALE_Y];
-
-        float imageWidth = currentBmp.getWidth() * scaleX;
-        float imageHeight = currentBmp.getHeight() * scaleY;
-        float viewWidth = view.getWidth();
-        float viewHeight = view.getHeight();
-
-        float minX, maxX, minY, maxY;
-
-        if (imageWidth <= viewWidth) {
-            minX = (viewWidth - imageWidth) / 2f;
-            maxX = minX;
-        } else {
-            minX = viewWidth - imageWidth;
-            maxX = 0;
-        }
-
-        if (imageHeight <= viewHeight) {
-            minY = (viewHeight - imageHeight) / 2f;
-            maxY = minY;
-        } else {
-            minY = viewHeight - imageHeight;
-            maxY = 0;
-        }
-
-        if (transX < minX) transX = minX;
-        if (transX > maxX) transX = maxX;
-        if (transY < minY) transY = minY;
-        if (transY > maxY) transY = maxY;
-
-        matrixValues[Matrix.MTRANS_X] = transX;
-        matrixValues[Matrix.MTRANS_Y] = transY;
-        m.setValues(matrixValues);
-    }
-
     private void updatePageTextCounter() {
         if (pageCounter != null && bookEngine != null) {
             String text = "";
@@ -943,19 +687,15 @@ public class MainActivity extends Activity {
             if (bitmaps != null && bitmaps.length > 1) {
                 int currentDisplayPart = currentBitmapPart + 1;
                 int totalParts = bitmaps.length;
-
                 if (isRtlMode) {
                     text += " \n( " + totalParts + " / " + currentDisplayPart + " )";
                 } else {
                     text += " \n( " + currentDisplayPart + " / " + totalParts + " )";
                 }
             }
-
             pageCounter.setText(text);
         }
-        if (pageSlider != null) {
-            pageSlider.setProgress(currentPage);
-        }
+        if (pageSlider != null) pageSlider.setProgress(currentPage);
     }
 
     private void showHUD() {
@@ -965,9 +705,7 @@ public class MainActivity extends Activity {
         pageCounter.setBackgroundColor(Color.TRANSPARENT);
         pageSlider.setVisibility(View.VISIBLE);
         pageCounter.setVisibility(View.VISIBLE);
-
         getWindow().getDecorView().setSystemUiVisibility(View.SYSTEM_UI_FLAG_VISIBLE);
-
         resetHideTimer();
     }
 
@@ -982,16 +720,12 @@ public class MainActivity extends Activity {
         } else {
             getWindow().getDecorView().setSystemUiVisibility(View.SYSTEM_UI_FLAG_VISIBLE);
         }
-
         hideHandler.removeCallbacks(hideRunnable);
     }
 
     private void toggleHUD() {
-        if (topBar.getVisibility() == View.VISIBLE) {
-            hideHUD();
-        } else {
-            showHUD();
-        }
+        if (topBar.getVisibility() == View.VISIBLE) hideHUD();
+        else showHUD();
     }
 
     private void showPageTextCounter() {
@@ -1007,10 +741,7 @@ public class MainActivity extends Activity {
         pageSlider.setVisibility(View.INVISIBLE);
         pageCounter.setVisibility(View.VISIBLE);
 
-        if (isFullscreenMode) {
-            getWindow().getDecorView().setSystemUiVisibility(View.SYSTEM_UI_FLAG_LOW_PROFILE);
-        }
-
+        if (isFullscreenMode) getWindow().getDecorView().setSystemUiVisibility(View.SYSTEM_UI_FLAG_LOW_PROFILE);
         resetHideTimer();
     }
 
@@ -1033,9 +764,7 @@ public class MainActivity extends Activity {
 
     private void toggleReadingDirectionMode() {
         isRtlMode = !isRtlMode;
-
         pageSlider.setScaleX(isRtlMode ? -1f : 1f);
-
         bottomBar.removeAllViews();
         if (isRtlMode) {
             bottomBar.addView(pageSlider);
@@ -1045,19 +774,14 @@ public class MainActivity extends Activity {
             bottomBar.addView(pageSlider);
         }
 
-        if (readingModeBtn != null) {
-            readingModeBtn.setText(isRtlMode ? "RTL" : "LTR");
-        }
-
+        if (readingModeBtn != null) readingModeBtn.setText(isRtlMode ? "RTL" : "LTR");
         updatePageTextCounter();
         saveProgress();
     }
 
     private void navigate(int touchSide) {
         long now = System.currentTimeMillis();
-        if (now - lastNavTime < NAV_COOLDOWN_MS) {
-            return;
-        }
+        if (now - lastNavTime < NAV_COOLDOWN_MS) return;
         lastNavTime = now;
 
         int direction = isRtlMode ? touchSide : -touchSide;
@@ -1077,21 +801,6 @@ public class MainActivity extends Activity {
                 showPageTextCounter();
             } else {
                 changePage(-1);
-            }
-        }
-    }
-
-    private void safeRecycle(Bitmap bitmap) {
-        if (bitmap != null && !bitmap.isRecycled()) {
-            bitmap.recycle();
-        }
-    }
-
-    private void recycleCurrentBitmaps() {
-        if (bitmaps != null) {
-            for (int i = 0; i < bitmaps.length; i++) {
-                safeRecycle(bitmaps[i]);
-                bitmaps[i] = null;
             }
         }
     }
