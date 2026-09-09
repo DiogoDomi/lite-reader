@@ -62,6 +62,7 @@ public class MainActivity extends Activity {
     private boolean isVolKeysEnabled = false;
     private boolean isFullscreenMode = true;
     private boolean isDimMode = false;
+    private int dimAlpha = 130;
 
     private TextView fileNameText;
 
@@ -76,9 +77,12 @@ public class MainActivity extends Activity {
 
     private Matrix matrix = new Matrix();
     private Matrix savedMatrix = new Matrix();
+
     private static final int NONE = 0;
     private static final int DRAG = 1;
     private static final int ZOOM = 2;
+    private static final int BRIGHTNESS = 3;
+
     private int mode = NONE;
     private PointF start = new PointF();
     private PointF mid = new PointF();
@@ -87,6 +91,7 @@ public class MainActivity extends Activity {
     private float baseScale = 1f;
     private boolean isPanning = false;
     private long downTime = 0;
+    private int startDimAlpha = 0;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -97,6 +102,7 @@ public class MainActivity extends Activity {
         isVolKeysEnabled = globalPrefs.getBoolean("vol_keys", false);
         isFullscreenMode = globalPrefs.getBoolean("fullscreen_mode", true);
         isDimMode = globalPrefs.getBoolean("dim_mode", false);
+        dimAlpha = globalPrefs.getInt("dim_alpha", 130);
 
         FrameLayout mainLayout = new FrameLayout(this);
         mainLayout.setBackgroundColor(Color.WHITE);
@@ -290,7 +296,7 @@ public class MainActivity extends Activity {
             public void onClick(View v) {
                 isDimMode = !isDimMode;
                 if (dimOverlay != null) {
-                    dimOverlay.setBackgroundColor(isDimMode ? Color.argb(130, 0, 0, 0) : Color.TRANSPARENT);
+                    dimOverlay.setBackgroundColor(isDimMode ? Color.argb(dimAlpha, 0, 0, 0) : Color.TRANSPARENT);
                 }
                 updateButtonColors();
                 SharedPreferences.Editor editor = getSharedPreferences("GlobalPrefs", MODE_PRIVATE).edit();
@@ -307,7 +313,6 @@ public class MainActivity extends Activity {
             }
         });
 
-        // Inicializa as cores de todos os botões baseado no estado carregado do GlobalPrefs
         updateButtonColors();
 
         settingsContainer.addView(sliceBitmapModeBtn);
@@ -401,7 +406,7 @@ public class MainActivity extends Activity {
         };
 
         dimOverlay = new View(this);
-        dimOverlay.setBackgroundColor(isDimMode ? Color.argb(130, 0, 0, 0) : Color.TRANSPARENT);
+        dimOverlay.setBackgroundColor(isDimMode ? Color.argb(dimAlpha, 0, 0, 0) : Color.TRANSPARENT);
         dimOverlay.setLayoutParams(new FrameLayout.LayoutParams(
             FrameLayout.LayoutParams.MATCH_PARENT,
             FrameLayout.LayoutParams.MATCH_PARENT
@@ -424,6 +429,18 @@ public class MainActivity extends Activity {
 
                 switch (event.getAction() & MotionEvent.ACTION_MASK) {
                     case MotionEvent.ACTION_DOWN:
+                        float screenWidthDown = v.getWidth();
+                        float touchXDown = event.getX();
+
+                        if (isDimMode && touchXDown <= screenWidthDown * 0.15f) {
+                            mode = BRIGHTNESS;
+                            start.set(event.getX(), event.getY());
+                            startDimAlpha = dimAlpha;
+                            isPanning = false;
+                            downTime = System.currentTimeMillis();
+                            break;
+                        }
+
                         savedMatrix.set(matrix);
                         start.set(event.getX(), event.getY());
                         mode = DRAG;
@@ -440,7 +457,29 @@ public class MainActivity extends Activity {
                         break;
                     case MotionEvent.ACTION_UP:
                     case MotionEvent.ACTION_POINTER_UP:
-                        if (mode == DRAG) {
+                        if (mode == BRIGHTNESS) {
+                            long clickDuration = System.currentTimeMillis() - downTime;
+                            float deltaX = Math.abs(event.getX() - start.x);
+                            float deltaY = Math.abs(event.getY() - start.y);
+
+                            if (!isPanning && clickDuration < 300 && deltaX < 20 && deltaY < 20) {
+                                float screenWidth = v.getWidth();
+                                float touchXAxis = event.getX();
+                                if (touchXAxis <= screenWidth * 0.25f) {
+                                    navigate(1);
+                                } else if (touchXAxis >= screenWidth * 0.75f) {
+                                    navigate(-1);
+                                } else {
+                                    if (zipFile != null) {
+                                        toggleHUD();
+                                    }
+                                }
+                            } else {
+                                SharedPreferences.Editor editor = getSharedPreferences("GlobalPrefs", MODE_PRIVATE).edit();
+                                editor.putInt("dim_alpha", dimAlpha);
+                                editor.apply();
+                            }
+                        } else if (mode == DRAG) {
                             long clickDuration = System.currentTimeMillis() - downTime;
                             float deltaX = Math.abs(event.getX() - start.x);
                             float deltaY = Math.abs(event.getY() - start.y);
@@ -462,7 +501,28 @@ public class MainActivity extends Activity {
                         mode = NONE;
                         break;
                     case MotionEvent.ACTION_MOVE:
-                        if (mode == DRAG) {
+                        if (mode == BRIGHTNESS) {
+                            float deltaY = event.getY() - start.y;
+                            float screenHeight = v.getHeight();
+
+                            if (Math.abs(deltaY) > 20) {
+                                isPanning = true;
+                            }
+
+                            float alphaChange = (deltaY / screenHeight) * 255f;
+                            int newAlpha = startDimAlpha + (int) alphaChange;
+
+                            if (newAlpha < 0) newAlpha = 0;
+                            if (newAlpha > 235) newAlpha = 235;
+
+                            dimAlpha = newAlpha;
+
+                            if (dimOverlay != null && isDimMode) {
+                                dimOverlay.setBackgroundColor(Color.argb(dimAlpha, 0, 0, 0));
+                            }
+                            return true;
+
+                        } else if (mode == DRAG) {
                             float deltaX = event.getX() - start.x;
                             float deltaY = event.getY() - start.y;
                             if (Math.abs(deltaX) > 20 || Math.abs(deltaY) > 20) {
@@ -490,7 +550,6 @@ public class MainActivity extends Activity {
     }
 
     private void updateButtonColors() {
-        // Se o modo DIM está ativado, a cor de um botão "desligado" será LTGRAY (mais claro). Senão, será GRAY.
         int colorOff = isDimMode ? Color.LTGRAY : Color.GRAY;
 
         if (sliceBitmapModeBtn != null) {
@@ -666,7 +725,6 @@ public class MainActivity extends Activity {
 
                 isVolKeysEnabled = false;
 
-                // Atualiza todas as cores dos botões após ler as prefs locais
                 updateButtonColors();
 
                 pageSlider.setScaleX(isRtlMode ? -1f : 1f);
