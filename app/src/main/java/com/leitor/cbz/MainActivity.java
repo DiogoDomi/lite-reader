@@ -3,7 +3,6 @@ package com.leitor.cbz;
 import android.app.Activity;
 import android.content.SharedPreferences;
 import android.graphics.Bitmap;
-import android.graphics.BitmapFactory;
 import android.graphics.Color;
 import android.graphics.Matrix;
 import android.graphics.PointF;
@@ -29,23 +28,17 @@ import android.provider.MediaStore;
 import android.content.res.Configuration;
 import android.view.GestureDetector;
 
-import java.io.InputStream;
-import java.util.ArrayList;
-import java.util.Collections;
-import java.util.Enumeration;
-import java.util.List;
-import java.util.zip.ZipEntry;
-import java.util.zip.ZipFile;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
-import java.util.concurrent.Future;
+// NOSSOS IMPORTS NOVOS
+import com.leitor.cbz.engine.BookEngine;
+import com.leitor.cbz.engine.CbzEngine;
 
 public class MainActivity extends Activity {
 
     private ImageView imageView;
 
-    private List<String> pages = new ArrayList<>();
-    private ZipFile zipFile;
+    // INSTÂNCIA DO NOSSO MOTOR (Isso esconde toda a lógica feia!)
+    private BookEngine bookEngine;
+
     private int currentPage = 0;
     private Bitmap[] bitmaps = null;
     private int currentBitmapPart = 0;
@@ -99,14 +92,6 @@ public class MainActivity extends Activity {
 
     private GestureDetector gestureDetector;
 
-    // --- Variáveis do Pre-load (Fase 4) ---
-    private ExecutorService executor = Executors.newSingleThreadExecutor();
-    private Future<?> currentPreloadTask = null;
-    private Bitmap preloadBitmap = null;
-    private int preloadPageIndex = -1;
-    private final Object decodeLock = new Object();
-
-    // --- Escudo Anti-Spam ---
     private long lastNavTime = 0;
     private static final int NAV_COOLDOWN_MS = 250;
 
@@ -213,13 +198,6 @@ public class MainActivity extends Activity {
                 resetHideTimer();
             }
         });
-        sliceBitmapModeBtn.setOnLongClickListener(new View.OnLongClickListener() {
-            @Override
-            public boolean onLongClick(View v) {
-                Toast.makeText(MainActivity.this, "Slice Mode", Toast.LENGTH_SHORT).show();
-                return true;
-            }
-        });
 
         readingModeBtn = new Button(this);
         readingModeBtn.setLayoutParams(btnLayoutConfig);
@@ -234,13 +212,6 @@ public class MainActivity extends Activity {
             public void onClick(View v) {
                 toggleReadingDirectionMode();
                 resetHideTimer();
-            }
-        });
-        readingModeBtn.setOnLongClickListener(new View.OnLongClickListener() {
-            @Override
-            public boolean onLongClick(View v) {
-                Toast.makeText(MainActivity.this, "Reading Direction", Toast.LENGTH_SHORT).show();
-                return true;
             }
         });
 
@@ -260,13 +231,6 @@ public class MainActivity extends Activity {
                 editor.putBoolean("vol_keys", isVolKeysEnabled);
                 editor.apply();
                 resetHideTimer();
-            }
-        });
-        volKeysModeBtn.setOnLongClickListener(new View.OnLongClickListener() {
-            @Override
-            public boolean onLongClick(View v) {
-                Toast.makeText(MainActivity.this, "Volume Key Navigation", Toast.LENGTH_SHORT).show();
-                return true;
             }
         });
 
@@ -293,13 +257,6 @@ public class MainActivity extends Activity {
                 }
             }
         });
-        fullscreenModeBtn.setOnLongClickListener(new View.OnLongClickListener() {
-            @Override
-            public boolean onLongClick(View v) {
-                Toast.makeText(MainActivity.this, "Immersive Mode", Toast.LENGTH_SHORT).show();
-                return true;
-            }
-        });
 
         dimModeBtn = new Button(this);
         dimModeBtn.setLayoutParams(btnLayoutConfig);
@@ -320,13 +277,6 @@ public class MainActivity extends Activity {
                 editor.putBoolean("dim_mode", isDimMode);
                 editor.apply();
                 resetHideTimer();
-            }
-        });
-        dimModeBtn.setOnLongClickListener(new View.OnLongClickListener() {
-            @Override
-            public boolean onLongClick(View v) {
-                Toast.makeText(MainActivity.this, "Screen Dimmer", Toast.LENGTH_SHORT).show();
-                return true;
             }
         });
 
@@ -369,12 +319,12 @@ public class MainActivity extends Activity {
         pageSlider.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
             @Override
             public void onProgressChanged(SeekBar seekBar, int progress, boolean fromUser) {
-                if (fromUser && pageCounter != null) {
+                if (fromUser && pageCounter != null && bookEngine != null) {
                     String text = "";
                     if (isRtlMode) {
-                        text = "[ " + pages.size() + " / " + (progress + 1) + " ]";
+                        text = "[ " + bookEngine.getPageCount() + " / " + (progress + 1) + " ]";
                     } else {
-                        text = "[ " + (progress + 1) + " / " + pages.size() + " ]";
+                        text = "[ " + (progress + 1) + " / " + bookEngine.getPageCount() + " ]";
                     }
                     pageCounter.setText(text);
                 }
@@ -388,16 +338,17 @@ public class MainActivity extends Activity {
             @Override
             public void onStopTrackingTouch(SeekBar seekBar) {
                 resetHideTimer();
+                if (bookEngine == null) return;
+
                 int progress = seekBar.getProgress();
                 if (progress != currentPage) {
-                    // NOVA LOGICA DO SLIDER
                     int direction;
                     if (progress == 0) {
-                        direction = 1; // Força inicio (Parte 1)
-                    } else if (progress == pages.size() - 1) {
-                        direction = -1; // Força fim absoluto (Parte final)
+                        direction = 1;
+                    } else if (progress == bookEngine.getPageCount() - 1) {
+                        direction = -1;
                     } else {
-                        direction = 1; // Se caiu em página do meio, começa da Parte 1
+                        direction = 1;
                     }
                     loadPage(progress, direction);
                 } else {
@@ -525,7 +476,7 @@ public class MainActivity extends Activity {
                                 } else if (touchXAxis >= screenWidth * 0.75f) {
                                     navigate(-1);
                                 } else {
-                                    if (zipFile != null) {
+                                    if (bookEngine != null) {
                                         toggleHUD();
                                     }
                                 }
@@ -547,7 +498,7 @@ public class MainActivity extends Activity {
                                 } else if (touchXAxis >= screenWidth * 0.75f) {
                                     navigate(-1);
                                 } else {
-                                    if (zipFile != null) {
+                                    if (bookEngine != null) {
                                         toggleHUD();
                                     }
                                 }
@@ -623,7 +574,7 @@ public class MainActivity extends Activity {
 
     @Override
     public boolean onKeyDown(int keyCode, KeyEvent event) {
-        if (isVolKeysEnabled && zipFile != null) {
+        if (isVolKeysEnabled && bookEngine != null) {
             if (keyCode == KeyEvent.KEYCODE_VOLUME_DOWN || keyCode == KeyEvent.KEYCODE_VOLUME_UP) {
                 int rotation = getWindowManager().getDefaultDisplay().getRotation();
 
@@ -652,7 +603,7 @@ public class MainActivity extends Activity {
 
     @Override
     public boolean onKeyUp(int keyCode, KeyEvent event) {
-        if (isVolKeysEnabled && zipFile != null) {
+        if (isVolKeysEnabled && bookEngine != null) {
             if (keyCode == KeyEvent.KEYCODE_VOLUME_DOWN || keyCode == KeyEvent.KEYCODE_VOLUME_UP) {
                 return true;
             }
@@ -703,7 +654,7 @@ public class MainActivity extends Activity {
     public void onConfigurationChanged(final android.content.res.Configuration newConfig) {
         super.onConfigurationChanged(newConfig);
 
-        toggleFrame(zipFile != null);
+        toggleFrame(bookEngine != null);
 
         imageView.requestLayout();
 
@@ -747,102 +698,66 @@ public class MainActivity extends Activity {
     private void openFile(String path) {
         try {
             currentFilePath = path;
-            zipFile = new ZipFile(path);
 
-            Enumeration<? extends ZipEntry> entries = zipFile.entries();
-            while (entries.hasMoreElements()) {
-                ZipEntry entry = entries.nextElement();
-                if (!entry.isDirectory()) {
-                    String name = entry.getName();
-                    if (!name.contains("__MACOSX") && !name.contains("/.") && !name.startsWith(".")) {
-                        if (name.toLowerCase().endsWith(".jpg") ||
-                            name.toLowerCase().endsWith(".jpeg") ||
-                            name.toLowerCase().endsWith(".png") ||
-                            name.toLowerCase().endsWith(".webp")) {
-                            pages.add(name);
-                        }
-                    }
-                }
+            // INICIALIZA O MOTOR! (A Interface não sabe que é um ZIP, só manda ler)
+            bookEngine = new CbzEngine();
+            bookEngine.openFile(path);
+
+            SharedPreferences prefs = getSharedPreferences("CBZReaderPrefs", MODE_PRIVATE);
+            int savedPage = prefs.getInt(currentFilePath + "_page", 0);
+            int savedPart = prefs.getInt(currentFilePath + "_part", 0);
+            isSliceBitmapMode = prefs.getBoolean(currentFilePath + "_slice", false);
+            isRtlMode = prefs.getBoolean(currentFilePath + "_rtl", true);
+
+            bookEngine.setSliceMode(isSliceBitmapMode);
+
+            if (readingModeBtn != null) {
+                readingModeBtn.setText(isRtlMode ? "RTL" : "LTR");
             }
 
-            Collections.sort(pages);
+            isVolKeysEnabled = false;
+            updateButtonColors();
 
-            if (!pages.isEmpty()) {
-                SharedPreferences prefs = getSharedPreferences("CBZReaderPrefs", MODE_PRIVATE);
-                int savedPage = prefs.getInt(currentFilePath + "_page", 0);
-                int savedPart = prefs.getInt(currentFilePath + "_part", 0);
-                isSliceBitmapMode = prefs.getBoolean(currentFilePath + "_slice", false);
-                isRtlMode = prefs.getBoolean(currentFilePath + "_rtl", true);
-
-                if (readingModeBtn != null) {
-                    readingModeBtn.setText(isRtlMode ? "RTL" : "LTR");
-                }
-
-                isVolKeysEnabled = false;
-
-                updateButtonColors();
-
-                pageSlider.setScaleX(isRtlMode ? -1f : 1f);
-                bottomBar.removeAllViews();
-                if (isRtlMode) {
-                    bottomBar.addView(pageSlider);
-                    bottomBar.addView(pageCounter);
-                } else {
-                    bottomBar.addView(pageCounter);
-                    bottomBar.addView(pageSlider);
-                }
-
-                if (savedPage < 0 || savedPage >= pages.size()) {
-                    savedPage = 0;
-                    savedPart = 0;
-                }
-
-                loadPage(savedPage, 1);
-
-                if (savedPart > 0 && bitmaps != null && savedPart < bitmaps.length) {
-                    currentBitmapPart = savedPart;
-                    renderBitmap(bitmaps[currentBitmapPart]);
-                }
-
-                pageSlider.setMax(pages.size() - 1);
-                String fileName = new java.io.File(path).getName();
-                fileNameText.setText(fileName);
+            pageSlider.setScaleX(isRtlMode ? -1f : 1f);
+            bottomBar.removeAllViews();
+            if (isRtlMode) {
+                bottomBar.addView(pageSlider);
+                bottomBar.addView(pageCounter);
             } else {
-                Toast.makeText(this, "No images found", Toast.LENGTH_LONG).show();
-                openBtn.setVisibility(View.VISIBLE);
-                currentFilePath = null;
+                bottomBar.addView(pageCounter);
+                bottomBar.addView(pageSlider);
             }
+
+            if (savedPage < 0 || savedPage >= bookEngine.getPageCount()) {
+                savedPage = 0;
+                savedPart = 0;
+            }
+
+            loadPage(savedPage, 1);
+
+            if (savedPart > 0 && bitmaps != null && savedPart < bitmaps.length) {
+                currentBitmapPart = savedPart;
+                renderBitmap(bitmaps[currentBitmapPart]);
+            }
+
+            pageSlider.setMax(bookEngine.getPageCount() - 1);
+            String fileName = new java.io.File(path).getName();
+            fileNameText.setText(fileName);
 
         } catch (Exception e) {
             e.printStackTrace();
-            Toast.makeText(this, "Failed to open test.cbz: " + e.getMessage(), Toast.LENGTH_LONG).show();
+            Toast.makeText(this, "Failed to open file: " + e.getMessage(), Toast.LENGTH_LONG).show();
             openBtn.setVisibility(View.VISIBLE);
             currentFilePath = null;
         }
     }
 
     private void closeFile() {
-        if (currentPreloadTask != null && !currentPreloadTask.isDone()) {
-            currentPreloadTask.cancel(true);
+        if (bookEngine != null) {
+            bookEngine.destroy();
+            bookEngine = null;
         }
-
-        synchronized (decodeLock) {
-            recycleCurrentBitmaps();
-            safeRecycle(preloadBitmap);
-            preloadBitmap = null;
-            preloadPageIndex = -1;
-
-            try {
-                if (zipFile != null) {
-                    zipFile.close();
-                    zipFile = null;
-                }
-            } catch (Exception e) {
-                e.printStackTrace();
-            }
-        }
-
-        pages.clear();
+        recycleCurrentBitmaps();
         currentPage = 0;
         currentBitmapPart = 0;
         currentFilePath = null;
@@ -851,132 +766,43 @@ public class MainActivity extends Activity {
 
     private void changePage(int direction) {
         int pageIndex = currentPage + direction;
-        if (pageIndex >= 0 && pageIndex < pages.size()) {
+        if (bookEngine != null && pageIndex >= 0 && pageIndex < bookEngine.getPageCount()) {
             loadPage(pageIndex, direction);
             showPageTextCounter();
         }
     }
 
     private void loadPage(int pageIndex, int direction) {
-        try {
-            Bitmap decodedBitmap = null;
+        if (bookEngine == null) return;
 
-            synchronized (decodeLock) {
-                if (preloadBitmap != null && preloadPageIndex == pageIndex) {
-                    decodedBitmap = preloadBitmap;
-                    preloadBitmap = null;
-                    preloadPageIndex = -1;
-                } else {
-                    safeRecycle(preloadBitmap);
-                    preloadBitmap = null;
-                    preloadPageIndex = -1;
+        recycleCurrentBitmaps();
 
-                    String entryName = pages.get(pageIndex);
-                    ZipEntry entry = zipFile.getEntry(entryName);
-                    InputStream imageStream = zipFile.getInputStream(entry);
+        // Pede a imagem mastigada pro motor
+        bitmaps = bookEngine.loadPage(pageIndex);
+        currentPage = pageIndex;
 
-                    BitmapFactory.Options options = new BitmapFactory.Options();
-                    options.inPreferredConfig = Bitmap.Config.RGB_565;
+        if (direction < 0 && bitmaps != null) {
+            currentBitmapPart = bitmaps.length - 1;
+        } else {
+            currentBitmapPart = 0;
+        }
 
-                    decodedBitmap = BitmapFactory.decodeStream(imageStream, null, options);
-                    imageStream.close();
-                }
-
-                recycleCurrentBitmaps();
-                processBitmap(decodedBitmap);
-
-                currentPage = pageIndex;
-
-                if (direction < 0) {
-                    currentBitmapPart = bitmaps.length - 1;
-                } else {
-                    currentBitmapPart = 0;
-                }
-            }
-
+        if (bitmaps != null && bitmaps.length > 0) {
             renderBitmap(bitmaps[currentBitmapPart]);
-
-            preloadNextPage(direction);
-
-        } catch (Exception e) {
-            e.printStackTrace();
-        }
-    }
-
-    private void preloadNextPage(final int direction) {
-        if (currentPreloadTask != null && !currentPreloadTask.isDone()) {
-            currentPreloadTask.cancel(true);
         }
 
-        currentPreloadTask = executor.submit(new Runnable() {
-            @Override
-            public void run() {
-                try {
-                    int nextPageIndex = currentPage + direction;
-
-                    if (nextPageIndex < 0 || nextPageIndex >= pages.size()) {
-                        return;
-                    }
-
-                    if (preloadBitmap != null && preloadPageIndex == nextPageIndex) {
-                        return;
-                    }
-
-                    String entryName = pages.get(nextPageIndex);
-                    ZipEntry entry = zipFile.getEntry(entryName);
-                    InputStream imageStream = zipFile.getInputStream(entry);
-
-                    BitmapFactory.Options options = new BitmapFactory.Options();
-                    options.inPreferredConfig = Bitmap.Config.RGB_565;
-
-                    Bitmap tempBitmap = BitmapFactory.decodeStream(imageStream, null, options);
-                    imageStream.close();
-
-                    synchronized (decodeLock) {
-                        if (Thread.currentThread().isInterrupted()) {
-                            safeRecycle(tempBitmap);
-                            return;
-                        }
-
-                        safeRecycle(preloadBitmap);
-                        preloadBitmap = tempBitmap;
-                        preloadPageIndex = nextPageIndex;
-                    }
-
-                } catch (Exception e) {
-                    e.printStackTrace();
-                }
-            }
-        });
+        bookEngine.preloadNextPage(pageIndex, direction);
     }
 
     private void toggleSlicePageMode() {
         isSliceBitmapMode = !isSliceBitmapMode;
-
+        if (bookEngine != null) {
+            bookEngine.setSliceMode(isSliceBitmapMode);
+        }
         updateButtonColors();
 
-        if (zipFile != null && !pages.isEmpty()) {
+        if (bookEngine != null) {
             loadPage(currentPage, 1);
-        }
-    }
-
-    private void processBitmap(Bitmap bitmap) {
-        int width = bitmap.getWidth();
-        int height = bitmap.getHeight();
-
-        if (isSliceBitmapMode && width > height) {
-            int mid = width / 2;
-            int rightWidth = width - mid;
-
-            bitmaps = new Bitmap[2];
-
-            bitmaps[0] = Bitmap.createBitmap(bitmap, mid, 0, rightWidth, height);
-            bitmaps[1] = Bitmap.createBitmap(bitmap, 0, 0, mid, height);
-
-            safeRecycle(bitmap);
-        } else {
-            bitmaps = new Bitmap[1];
-            bitmaps[0] = bitmap;
         }
     }
 
@@ -1106,12 +932,12 @@ public class MainActivity extends Activity {
     }
 
     private void updatePageTextCounter() {
-        if (pageCounter != null) {
+        if (pageCounter != null && bookEngine != null) {
             String text = "";
             if (isRtlMode) {
-                text = "[ " + pages.size() + " / " + (currentPage + 1) + " ]";
+                text = "[ " + bookEngine.getPageCount() + " / " + (currentPage + 1) + " ]";
             } else {
-                text = "[ " + (currentPage + 1) + " / " + pages.size() + " ]";
+                text = "[ " + (currentPage + 1) + " / " + bookEngine.getPageCount() + " ]";
             }
 
             if (bitmaps != null && bitmaps.length > 1) {
@@ -1227,10 +1053,8 @@ public class MainActivity extends Activity {
         saveProgress();
     }
 
-    // --- O PROTETOR DE CRASHES ---
     private void navigate(int touchSide) {
         long now = System.currentTimeMillis();
-        // Se a diferença do último toque pra esse for menor que 250ms, IGNORA (Evita enfileirar decodes na Main Thread)
         if (now - lastNavTime < NAV_COOLDOWN_MS) {
             return;
         }
@@ -1275,16 +1099,7 @@ public class MainActivity extends Activity {
     @Override
     protected void onDestroy() {
         super.onDestroy();
-        try {
-            if (zipFile != null) zipFile.close();
-            recycleCurrentBitmaps();
-            safeRecycle(preloadBitmap);
-            if (executor != null) {
-                executor.shutdownNow();
-            }
-        } catch (Exception e) {
-            e.printStackTrace();
-        }
+        closeFile();
         hideHandler.removeCallbacks(hideRunnable);
     }
 }
