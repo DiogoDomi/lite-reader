@@ -55,17 +55,21 @@ public class MainActivity extends Activity {
     private Button readingModeBtn;
     private Button volKeysModeBtn;
     private Button fullscreenModeBtn;
+    private Button dimModeBtn;
 
     private boolean isSliceBitmapMode = false;
     private boolean isRtlMode = true;
     private boolean isVolKeysEnabled = false;
     private boolean isFullscreenMode = true;
+    private boolean isDimMode = false;
 
     private TextView fileNameText;
 
     private LinearLayout bottomBar;
     private TextView pageCounter;
     private SeekBar pageSlider;
+
+    private View dimOverlay;
 
     private Handler hideHandler = new Handler();
     private Runnable hideRunnable;
@@ -92,6 +96,7 @@ public class MainActivity extends Activity {
         SharedPreferences globalPrefs = getSharedPreferences("GlobalPrefs", MODE_PRIVATE);
         isVolKeysEnabled = globalPrefs.getBoolean("vol_keys", false);
         isFullscreenMode = globalPrefs.getBoolean("fullscreen_mode", true);
+        isDimMode = globalPrefs.getBoolean("dim_mode", false);
 
         FrameLayout mainLayout = new FrameLayout(this);
         mainLayout.setBackgroundColor(Color.WHITE);
@@ -149,7 +154,7 @@ public class MainActivity extends Activity {
         );
         fileNameTextParams.gravity = Gravity.START | Gravity.CENTER_VERTICAL;
         int fileNameTextPaddingPx = (int) (15 * getResources().getDisplayMetrics().density);
-        int fileNameRightMarginPx = (int) (200 * getResources().getDisplayMetrics().density);
+        int fileNameRightMarginPx = (int) (260 * getResources().getDisplayMetrics().density);
         fileNameTextParams.setMargins(fileNameTextPaddingPx, 0, fileNameRightMarginPx, 0);
         fileNameText.setLayoutParams(fileNameTextParams);
 
@@ -175,7 +180,6 @@ public class MainActivity extends Activity {
         sliceBitmapModeBtn.setLayoutParams(btnLayoutConfig);
         sliceBitmapModeBtn.setText("SLC");
         sliceBitmapModeBtn.setBackgroundColor(Color.TRANSPARENT);
-        sliceBitmapModeBtn.setTextColor(isSliceBitmapMode ? Color.WHITE : Color.GRAY);
         sliceBitmapModeBtn.setGravity(Gravity.CENTER);
         sliceBitmapModeBtn.setPadding(btnPaddingPx, btnPaddingPx, btnPaddingPx, btnPaddingPx);
         sliceBitmapModeBtn.setTextSize(14f);
@@ -221,7 +225,6 @@ public class MainActivity extends Activity {
         volKeysModeBtn.setLayoutParams(btnLayoutConfig);
         volKeysModeBtn.setText("VOL");
         volKeysModeBtn.setBackgroundColor(Color.TRANSPARENT);
-        volKeysModeBtn.setTextColor(isVolKeysEnabled ? Color.WHITE : Color.GRAY);
         volKeysModeBtn.setGravity(Gravity.CENTER);
         volKeysModeBtn.setPadding(btnPaddingPx, btnPaddingPx, btnPaddingPx, btnPaddingPx);
         volKeysModeBtn.setTextSize(14f);
@@ -229,7 +232,7 @@ public class MainActivity extends Activity {
             @Override
             public void onClick(View v) {
                 isVolKeysEnabled = !isVolKeysEnabled;
-                volKeysModeBtn.setTextColor(isVolKeysEnabled ? Color.WHITE : Color.GRAY);
+                updateButtonColors();
                 SharedPreferences.Editor editor = getSharedPreferences("GlobalPrefs", MODE_PRIVATE).edit();
                 editor.putBoolean("vol_keys", isVolKeysEnabled);
                 editor.apply();
@@ -248,7 +251,6 @@ public class MainActivity extends Activity {
         fullscreenModeBtn.setLayoutParams(btnLayoutConfig);
         fullscreenModeBtn.setText("FUL");
         fullscreenModeBtn.setBackgroundColor(Color.TRANSPARENT);
-        fullscreenModeBtn.setTextColor(isFullscreenMode ? Color.WHITE : Color.GRAY);
         fullscreenModeBtn.setGravity(Gravity.CENTER);
         fullscreenModeBtn.setPadding(btnPaddingPx, btnPaddingPx, btnPaddingPx, btnPaddingPx);
         fullscreenModeBtn.setTextSize(14f);
@@ -256,7 +258,7 @@ public class MainActivity extends Activity {
             @Override
             public void onClick(View v) {
                 isFullscreenMode = !isFullscreenMode;
-                fullscreenModeBtn.setTextColor(isFullscreenMode ? Color.WHITE : Color.GRAY);
+                updateButtonColors();
                 SharedPreferences.Editor editor = getSharedPreferences("GlobalPrefs", MODE_PRIVATE).edit();
                 editor.putBoolean("fullscreen_mode", isFullscreenMode);
                 editor.apply();
@@ -276,10 +278,43 @@ public class MainActivity extends Activity {
             }
         });
 
+        dimModeBtn = new Button(this);
+        dimModeBtn.setLayoutParams(btnLayoutConfig);
+        dimModeBtn.setText("DIM");
+        dimModeBtn.setBackgroundColor(Color.TRANSPARENT);
+        dimModeBtn.setGravity(Gravity.CENTER);
+        dimModeBtn.setPadding(btnPaddingPx, btnPaddingPx, btnPaddingPx, btnPaddingPx);
+        dimModeBtn.setTextSize(14f);
+        dimModeBtn.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                isDimMode = !isDimMode;
+                if (dimOverlay != null) {
+                    dimOverlay.setBackgroundColor(isDimMode ? Color.argb(130, 0, 0, 0) : Color.TRANSPARENT);
+                }
+                updateButtonColors();
+                SharedPreferences.Editor editor = getSharedPreferences("GlobalPrefs", MODE_PRIVATE).edit();
+                editor.putBoolean("dim_mode", isDimMode);
+                editor.apply();
+                resetHideTimer();
+            }
+        });
+        dimModeBtn.setOnLongClickListener(new View.OnLongClickListener() {
+            @Override
+            public boolean onLongClick(View v) {
+                Toast.makeText(MainActivity.this, "Screen Dimmer", Toast.LENGTH_SHORT).show();
+                return true;
+            }
+        });
+
+        // Inicializa as cores de todos os botões baseado no estado carregado do GlobalPrefs
+        updateButtonColors();
+
         settingsContainer.addView(sliceBitmapModeBtn);
         settingsContainer.addView(readingModeBtn);
         settingsContainer.addView(volKeysModeBtn);
         settingsContainer.addView(fullscreenModeBtn);
+        settingsContainer.addView(dimModeBtn);
 
         topBar.addView(fileNameText);
         topBar.addView(settingsContainer);
@@ -365,6 +400,17 @@ public class MainActivity extends Activity {
             }
         };
 
+        dimOverlay = new View(this);
+        dimOverlay.setBackgroundColor(isDimMode ? Color.argb(130, 0, 0, 0) : Color.TRANSPARENT);
+        dimOverlay.setLayoutParams(new FrameLayout.LayoutParams(
+            FrameLayout.LayoutParams.MATCH_PARENT,
+            FrameLayout.LayoutParams.MATCH_PARENT
+        ));
+        dimOverlay.setClickable(false);
+        dimOverlay.setFocusable(false);
+
+        mainLayout.addView(dimOverlay);
+
         setContentView(mainLayout);
 
         imageView.setOnTouchListener(new View.OnTouchListener() {
@@ -441,6 +487,24 @@ public class MainActivity extends Activity {
                 return true;
             }
         });
+    }
+
+    private void updateButtonColors() {
+        // Se o modo DIM está ativado, a cor de um botão "desligado" será LTGRAY (mais claro). Senão, será GRAY.
+        int colorOff = isDimMode ? Color.LTGRAY : Color.GRAY;
+
+        if (sliceBitmapModeBtn != null) {
+            sliceBitmapModeBtn.setTextColor(isSliceBitmapMode ? Color.WHITE : colorOff);
+        }
+        if (volKeysModeBtn != null) {
+            volKeysModeBtn.setTextColor(isVolKeysEnabled ? Color.WHITE : colorOff);
+        }
+        if (fullscreenModeBtn != null) {
+            fullscreenModeBtn.setTextColor(isFullscreenMode ? Color.WHITE : colorOff);
+        }
+        if (dimModeBtn != null) {
+            dimModeBtn.setTextColor(isDimMode ? Color.WHITE : colorOff);
+        }
     }
 
     @Override
@@ -596,18 +660,14 @@ public class MainActivity extends Activity {
                 isSliceBitmapMode = prefs.getBoolean(currentFilePath + "_slice", false);
                 isRtlMode = prefs.getBoolean(currentFilePath + "_rtl", true);
 
-                if (sliceBitmapModeBtn != null) {
-                    sliceBitmapModeBtn.setTextColor(isSliceBitmapMode ? Color.WHITE : Color.GRAY);
-                }
-
                 if (readingModeBtn != null) {
                     readingModeBtn.setText(isRtlMode ? "RTL" : "LTR");
                 }
 
                 isVolKeysEnabled = false;
-                if (volKeysModeBtn != null) {
-                    volKeysModeBtn.setTextColor(Color.GRAY);
-                }
+
+                // Atualiza todas as cores dos botões após ler as prefs locais
+                updateButtonColors();
 
                 pageSlider.setScaleX(isRtlMode ? -1f : 1f);
                 bottomBar.removeAllViews();
@@ -708,9 +768,7 @@ public class MainActivity extends Activity {
     private void toggleSlicePageMode() {
         isSliceBitmapMode = !isSliceBitmapMode;
 
-        if (sliceBitmapModeBtn != null) {
-            sliceBitmapModeBtn.setTextColor(isSliceBitmapMode ? Color.WHITE : Color.GRAY);
-        }
+        updateButtonColors();
 
         if (zipFile != null && !pages.isEmpty()) {
             loadPage(currentPage, 1);
