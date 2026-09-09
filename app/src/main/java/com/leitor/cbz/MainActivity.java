@@ -108,7 +108,7 @@ public class MainActivity extends Activity {
 
     // --- Escudo Anti-Spam ---
     private long lastNavTime = 0;
-    private static final int NAV_COOLDOWN_MS = 250; // Tempo mínimo entre trocas de página (250 milissegundos)
+    private static final int NAV_COOLDOWN_MS = 250;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -390,7 +390,15 @@ public class MainActivity extends Activity {
                 resetHideTimer();
                 int progress = seekBar.getProgress();
                 if (progress != currentPage) {
-                    int direction = progress > currentPage ? 1 : -1;
+                    // NOVA LOGICA DO SLIDER
+                    int direction;
+                    if (progress == 0) {
+                        direction = 1; // Força inicio (Parte 1)
+                    } else if (progress == pages.size() - 1) {
+                        direction = -1; // Força fim absoluto (Parte final)
+                    } else {
+                        direction = 1; // Se caiu em página do meio, começa da Parte 1
+                    }
                     loadPage(progress, direction);
                 } else {
                     updatePageTextCounter();
