@@ -36,6 +36,9 @@ import java.util.Enumeration;
 import java.util.List;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipFile;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
 
 public class MainActivity extends Activity {
 
@@ -95,6 +98,17 @@ public class MainActivity extends Activity {
     private int startDimAlpha = 0;
 
     private GestureDetector gestureDetector;
+
+    // --- Variáveis do Pre-load (Fase 4) ---
+    private ExecutorService executor = Executors.newSingleThreadExecutor();
+    private Future<?> currentPreloadTask = null;
+    private Bitmap preloadBitmap = null;
+    private int preloadPageIndex = -1;
+    private final Object decodeLock = new Object();
+
+    // --- Escudo Anti-Spam ---
+    private long lastNavTime = 0;
+    private static final int NAV_COOLDOWN_MS = 250; // Tempo mínimo entre trocas de página (250 milissegundos)
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -800,14 +814,24 @@ public class MainActivity extends Activity {
     }
 
     private void closeFile() {
-        recycleCurrentBitmaps();
-        try {
-            if (zipFile != null) {
-                zipFile.close();
-                zipFile = null;
+        if (currentPreloadTask != null && !currentPreloadTask.isDone()) {
+            currentPreloadTask.cancel(true);
+        }
+
+        synchronized (decodeLock) {
+            recycleCurrentBitmaps();
+            safeRecycle(preloadBitmap);
+            preloadBitmap = null;
+            preloadPageIndex = -1;
+
+            try {
+                if (zipFile != null) {
+                    zipFile.close();
+                    zipFile = null;
+                }
+            } catch (Exception e) {
+                e.printStackTrace();
             }
-        } catch (Exception e) {
-            e.printStackTrace();
         }
 
         pages.clear();
@@ -827,33 +851,95 @@ public class MainActivity extends Activity {
 
     private void loadPage(int pageIndex, int direction) {
         try {
-            recycleCurrentBitmaps();
+            Bitmap decodedBitmap = null;
 
-            String entryName = pages.get(pageIndex);
-            ZipEntry entry = zipFile.getEntry(entryName);
-            InputStream imageStream = zipFile.getInputStream(entry);
+            synchronized (decodeLock) {
+                if (preloadBitmap != null && preloadPageIndex == pageIndex) {
+                    decodedBitmap = preloadBitmap;
+                    preloadBitmap = null;
+                    preloadPageIndex = -1;
+                } else {
+                    safeRecycle(preloadBitmap);
+                    preloadBitmap = null;
+                    preloadPageIndex = -1;
 
-            BitmapFactory.Options options = new BitmapFactory.Options();
-            options.inPreferredConfig = Bitmap.Config.RGB_565;
+                    String entryName = pages.get(pageIndex);
+                    ZipEntry entry = zipFile.getEntry(entryName);
+                    InputStream imageStream = zipFile.getInputStream(entry);
 
-            Bitmap bitmap = BitmapFactory.decodeStream(imageStream, null, options);
-            imageStream.close();
+                    BitmapFactory.Options options = new BitmapFactory.Options();
+                    options.inPreferredConfig = Bitmap.Config.RGB_565;
 
-            processBitmap(bitmap);
+                    decodedBitmap = BitmapFactory.decodeStream(imageStream, null, options);
+                    imageStream.close();
+                }
 
-            currentPage = pageIndex;
+                recycleCurrentBitmaps();
+                processBitmap(decodedBitmap);
 
-            if (direction < 0) {
-                currentBitmapPart = bitmaps.length - 1;
-            } else {
-                currentBitmapPart = 0;
+                currentPage = pageIndex;
+
+                if (direction < 0) {
+                    currentBitmapPart = bitmaps.length - 1;
+                } else {
+                    currentBitmapPart = 0;
+                }
             }
 
             renderBitmap(bitmaps[currentBitmapPart]);
 
+            preloadNextPage(direction);
+
         } catch (Exception e) {
             e.printStackTrace();
         }
+    }
+
+    private void preloadNextPage(final int direction) {
+        if (currentPreloadTask != null && !currentPreloadTask.isDone()) {
+            currentPreloadTask.cancel(true);
+        }
+
+        currentPreloadTask = executor.submit(new Runnable() {
+            @Override
+            public void run() {
+                try {
+                    int nextPageIndex = currentPage + direction;
+
+                    if (nextPageIndex < 0 || nextPageIndex >= pages.size()) {
+                        return;
+                    }
+
+                    if (preloadBitmap != null && preloadPageIndex == nextPageIndex) {
+                        return;
+                    }
+
+                    String entryName = pages.get(nextPageIndex);
+                    ZipEntry entry = zipFile.getEntry(entryName);
+                    InputStream imageStream = zipFile.getInputStream(entry);
+
+                    BitmapFactory.Options options = new BitmapFactory.Options();
+                    options.inPreferredConfig = Bitmap.Config.RGB_565;
+
+                    Bitmap tempBitmap = BitmapFactory.decodeStream(imageStream, null, options);
+                    imageStream.close();
+
+                    synchronized (decodeLock) {
+                        if (Thread.currentThread().isInterrupted()) {
+                            safeRecycle(tempBitmap);
+                            return;
+                        }
+
+                        safeRecycle(preloadBitmap);
+                        preloadBitmap = tempBitmap;
+                        preloadPageIndex = nextPageIndex;
+                    }
+
+                } catch (Exception e) {
+                    e.printStackTrace();
+                }
+            }
+        });
     }
 
     private void toggleSlicePageMode() {
@@ -1133,7 +1219,15 @@ public class MainActivity extends Activity {
         saveProgress();
     }
 
+    // --- O PROTETOR DE CRASHES ---
     private void navigate(int touchSide) {
+        long now = System.currentTimeMillis();
+        // Se a diferença do último toque pra esse for menor que 250ms, IGNORA (Evita enfileirar decodes na Main Thread)
+        if (now - lastNavTime < NAV_COOLDOWN_MS) {
+            return;
+        }
+        lastNavTime = now;
+
         int direction = isRtlMode ? touchSide : -touchSide;
 
         if (direction > 0) {
@@ -1176,6 +1270,10 @@ public class MainActivity extends Activity {
         try {
             if (zipFile != null) zipFile.close();
             recycleCurrentBitmaps();
+            safeRecycle(preloadBitmap);
+            if (executor != null) {
+                executor.shutdownNow();
+            }
         } catch (Exception e) {
             e.printStackTrace();
         }
