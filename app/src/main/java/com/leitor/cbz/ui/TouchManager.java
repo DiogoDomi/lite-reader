@@ -51,7 +51,7 @@ public class TouchManager implements View.OnTouchListener {
         gestureDetector = new GestureDetector(context, new GestureDetector.SimpleOnGestureListener() {
             @Override
             public boolean onDoubleTap(MotionEvent e) {
-                if (currentBitmap == null) return false;
+                if (currentBitmap == null || currentBitmap.isRecycled()) return false;
 
                 matrix.getValues(matrixValues);
                 float currentScale = matrixValues[Matrix.MSCALE_X];
@@ -72,12 +72,14 @@ public class TouchManager implements View.OnTouchListener {
 
     public void setFilterState(int filterMode, int dimAlpha) {
         this.filterMode = filterMode;
-        this.dimAlpha = dimAlpha;
+
+        int maxAlpha = (filterMode == 1) ? 130 : ((filterMode == 2) ? 90 : 255);
+        this.dimAlpha = Math.min(dimAlpha, maxAlpha);
     }
 
     public void applyBaseMatrix(Bitmap bitmap) {
         this.currentBitmap = bitmap;
-        if (bitmap == null || imageView.getWidth() == 0 || imageView.getHeight() == 0) return;
+        if (bitmap == null || bitmap.isRecycled() || imageView.getWidth() == 0 || imageView.getHeight() == 0) return;
 
         float vWidth = imageView.getWidth();
         float vHeight = imageView.getHeight();
@@ -105,7 +107,7 @@ public class TouchManager implements View.OnTouchListener {
             return true;
         }
 
-        if (currentBitmap == null) {
+        if (currentBitmap == null || currentBitmap.isRecycled()) {
             return false;
         }
 
@@ -170,8 +172,10 @@ public class TouchManager implements View.OnTouchListener {
                     float alphaChange = (deltaY / screenHeight) * 255f;
                     int newAlpha = startDimAlpha + (int) alphaChange;
 
+                    int maxAlpha = (filterMode == 1) ? 130 : 90;
+
                     if (newAlpha < 0) newAlpha = 0;
-                    if (newAlpha > 235) newAlpha = 235;
+                    if (newAlpha > maxAlpha) newAlpha = maxAlpha;
 
                     dimAlpha = newAlpha;
 
@@ -238,7 +242,7 @@ public class TouchManager implements View.OnTouchListener {
     }
 
     private void limitDrag() {
-        if (currentBitmap == null) return;
+        if (currentBitmap == null || currentBitmap.isRecycled()) return;
 
         matrix.getValues(matrixValues);
         float transX = matrixValues[Matrix.MTRANS_X];
