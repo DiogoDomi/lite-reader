@@ -468,7 +468,15 @@ public class ReaderActivity extends Activity {
         try {
             currentFilePath = path;
 
-            bookEngine = new CbzEngine();
+            String lowerPath = path.toLowerCase();
+            if (lowerPath.endsWith(".pdf")) {
+                bookEngine = new com.leitor.cbz.engine.PdfEngine(this);
+            } else if (lowerPath.endsWith(".cbz") || lowerPath.endsWith(".zip")) {
+                bookEngine = new com.leitor.cbz.engine.CbzEngine();
+            } else {
+                throw new Exception("Unsupported file format.");
+            }
+
             bookEngine.openFile(path);
 
             SharedPreferences prefs = getSharedPreferences("CBZReaderPrefs", MODE_PRIVATE);

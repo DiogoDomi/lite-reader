@@ -55,15 +55,14 @@ public class MainActivity extends Activity {
                 String realPath = getPath(uri);
 
                 if (realPath != null) {
-                    if (realPath.toLowerCase().endsWith(".cbz")) {
+                    String lowerPath = realPath.toLowerCase();
+                    if (lowerPath.endsWith(".cbz") || lowerPath.endsWith(".zip") || lowerPath.endsWith(".pdf")) {
                         Intent intent = new Intent(MainActivity.this, ReaderActivity.class);
                         intent.putExtra("FILE_PATH", realPath);
                         startActivity(intent);
                     } else {
-                        Toast.makeText(this, "Unsupported format.", Toast.LENGTH_LONG).show();
+                        Toast.makeText(this, "Unsupported format yet.", Toast.LENGTH_LONG).show();
                     }
-                } else {
-                    Toast.makeText(this, "Error: Could not extract file path from URI.", Toast.LENGTH_LONG).show();
                 }
             } catch (Exception e) {
                 Toast.makeText(this, "Intent Crash Prevented: " + e.getMessage(), Toast.LENGTH_LONG).show();
