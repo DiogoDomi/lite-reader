@@ -40,7 +40,7 @@ public class TouchManager implements View.OnTouchListener {
     private boolean isPanning = false;
     private long downTime = 0;
 
-    private boolean isDimMode = false;
+    private int filterMode = 0;
     private int dimAlpha = 130;
     private int startDimAlpha = 0;
 
@@ -70,8 +70,8 @@ public class TouchManager implements View.OnTouchListener {
         });
     }
 
-    public void setDimState(boolean isDimMode, int dimAlpha) {
-        this.isDimMode = isDimMode;
+    public void setFilterState(int filterMode, int dimAlpha) {
+        this.filterMode = filterMode;
         this.dimAlpha = dimAlpha;
     }
 
@@ -114,7 +114,7 @@ public class TouchManager implements View.OnTouchListener {
                 float screenWidthDown = v.getWidth();
                 float touchXDown = event.getX();
 
-                if (isDimMode && touchXDown <= screenWidthDown * 0.15f) {
+                if (filterMode != 0 && touchXDown <= screenWidthDown * 0.15f) {
                     mode = BRIGHTNESS;
                     start.set(event.getX(), event.getY());
                     startDimAlpha = dimAlpha;

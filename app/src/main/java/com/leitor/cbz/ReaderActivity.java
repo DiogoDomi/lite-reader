@@ -41,13 +41,13 @@ public class ReaderActivity extends Activity {
     private Button readingModeBtn;
     private Button volKeysModeBtn;
     private Button fullscreenModeBtn;
-    private Button dimModeBtn;
+    private Button filterModeBtn;
 
     private boolean isSliceBitmapMode = false;
     private boolean isRtlMode = true;
     private boolean isVolKeysEnabled = false;
     private boolean isFullscreenMode = true;
-    private boolean isDimMode = false;
+    private int filterMode = 0;
     private int dimAlpha = 130;
 
     private TextView fileNameText;
@@ -72,7 +72,7 @@ public class ReaderActivity extends Activity {
             SharedPreferences globalPrefs = getSharedPreferences("GlobalPrefs", MODE_PRIVATE);
             isVolKeysEnabled = globalPrefs.getBoolean("vol_keys", false);
             isFullscreenMode = globalPrefs.getBoolean("fullscreen_mode", true);
-            isDimMode = globalPrefs.getBoolean("dim_mode", false);
+            filterMode = globalPrefs.getInt("filter_mode", 0);
             dimAlpha = globalPrefs.getInt("dim_alpha", 130);
 
             FrameLayout mainLayout = new FrameLayout(this);
@@ -207,26 +207,27 @@ public class ReaderActivity extends Activity {
                 }
             });
 
-            dimModeBtn = new Button(this);
-            dimModeBtn.setLayoutParams(btnLayoutConfig);
-            dimModeBtn.setText("DIM");
-            dimModeBtn.setBackgroundColor(Color.TRANSPARENT);
-            dimModeBtn.setGravity(Gravity.CENTER);
-            dimModeBtn.setPadding(btnPaddingPx, btnPaddingPx, btnPaddingPx, btnPaddingPx);
-            dimModeBtn.setTextSize(14f);
-            dimModeBtn.setOnClickListener(new View.OnClickListener() {
+            filterModeBtn = new Button(this);
+            filterModeBtn.setLayoutParams(btnLayoutConfig);
+            filterModeBtn.setBackgroundColor(Color.TRANSPARENT);
+            filterModeBtn.setGravity(Gravity.CENTER);
+            filterModeBtn.setPadding(btnPaddingPx, btnPaddingPx, btnPaddingPx, btnPaddingPx);
+            filterModeBtn.setTextSize(14f);
+            filterModeBtn.setOnClickListener(new View.OnClickListener() {
                 @Override
                 public void onClick(View v) {
-                    isDimMode = !isDimMode;
-                    if (dimOverlay != null) {
-                        dimOverlay.setBackgroundColor(isDimMode ? Color.argb(dimAlpha, 0, 0, 0) : Color.TRANSPARENT);
-                    }
+                    filterMode++;
+                    if (filterMode > 2) filterMode = 0;
+
+                    applyFilterColor();
                     updateButtonColors();
+
                     if (touchManager != null) {
-                        touchManager.setDimState(isDimMode, dimAlpha);
+                        touchManager.setFilterState(filterMode, dimAlpha);
                     }
+
                     SharedPreferences.Editor editor = getSharedPreferences("GlobalPrefs", MODE_PRIVATE).edit();
-                    editor.putBoolean("dim_mode", isDimMode);
+                    editor.putInt("filter_mode", filterMode);
                     editor.apply();
                     resetHideTimer();
                 }
@@ -238,7 +239,7 @@ public class ReaderActivity extends Activity {
             settingsContainer.addView(readingModeBtn);
             settingsContainer.addView(volKeysModeBtn);
             settingsContainer.addView(fullscreenModeBtn);
-            settingsContainer.addView(dimModeBtn);
+            settingsContainer.addView(filterModeBtn);
 
             topBar.addView(fileNameText);
             topBar.addView(settingsContainer);
@@ -328,13 +329,13 @@ public class ReaderActivity extends Activity {
             };
 
             dimOverlay = new View(this);
-            dimOverlay.setBackgroundColor(isDimMode ? Color.argb(dimAlpha, 0, 0, 0) : Color.TRANSPARENT);
             dimOverlay.setLayoutParams(new FrameLayout.LayoutParams(
                 FrameLayout.LayoutParams.MATCH_PARENT,
                 FrameLayout.LayoutParams.MATCH_PARENT
             ));
             dimOverlay.setClickable(false);
             dimOverlay.setFocusable(false);
+            applyFilterColor();
 
             mainLayout.addView(dimOverlay);
 
@@ -356,9 +357,7 @@ public class ReaderActivity extends Activity {
                 @Override
                 public void onBrightnessChange(int newAlpha) {
                     dimAlpha = newAlpha;
-                    if (dimOverlay != null && isDimMode) {
-                        dimOverlay.setBackgroundColor(Color.argb(dimAlpha, 0, 0, 0));
-                    }
+                    applyFilterColor();
                 }
 
                 @Override
@@ -370,7 +369,7 @@ public class ReaderActivity extends Activity {
                 }
             });
 
-            touchManager.setDimState(isDimMode, dimAlpha);
+            touchManager.setFilterState(filterMode, dimAlpha);
             imageView.setOnTouchListener(touchManager);
 
             String filePath = getIntent().getStringExtra("FILE_PATH");
@@ -392,12 +391,24 @@ public class ReaderActivity extends Activity {
     }
 
     private void updateButtonColors() {
-        int colorOff = isDimMode ? Color.LTGRAY : Color.GRAY;
+        int colorOff = (filterMode != 0) ? Color.LTGRAY : Color.GRAY;
 
         if (sliceBitmapModeBtn != null) sliceBitmapModeBtn.setTextColor(isSliceBitmapMode ? Color.WHITE : colorOff);
         if (volKeysModeBtn != null) volKeysModeBtn.setTextColor(isVolKeysEnabled ? Color.WHITE : colorOff);
         if (fullscreenModeBtn != null) fullscreenModeBtn.setTextColor(isFullscreenMode ? Color.WHITE : colorOff);
-        if (dimModeBtn != null) dimModeBtn.setTextColor(isDimMode ? Color.WHITE : colorOff);
+
+        if (filterModeBtn != null) {
+            if (filterMode == 1) {
+                filterModeBtn.setText("DIM");
+                filterModeBtn.setTextColor(Color.WHITE);
+            } else if (filterMode == 2) {
+                filterModeBtn.setText("SEP");
+                filterModeBtn.setTextColor(Color.WHITE);
+            } else {
+                filterModeBtn.setText("EYE");
+                filterModeBtn.setTextColor(colorOff);
+            }
+        }
     }
 
     @Override
@@ -750,6 +761,18 @@ public class ReaderActivity extends Activity {
                 showPageTextCounter();
             } else {
                 changePage(-1);
+            }
+        }
+    }
+
+    private void applyFilterColor() {
+        if (dimOverlay != null) {
+            if (filterMode == 1) {
+                dimOverlay.setBackgroundColor(Color.argb(dimAlpha, 0, 0, 0));
+            } else if (filterMode == 2) {
+                dimOverlay.setBackgroundColor(Color.argb(dimAlpha, 230, 150, 20));
+            } else {
+                dimOverlay.setBackgroundColor(Color.TRANSPARENT);
             }
         }
     }
