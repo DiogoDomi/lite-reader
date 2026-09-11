@@ -27,8 +27,6 @@ public class PdfEngine implements BookEngine {
     private int preloadPageIndex = -1;
     private final Object decodeLock = new Object();
 
-    private static final float RENDER_SCALE = 2.0f;
-
     public PdfEngine(Context context) {
         pdfiumCore = new PdfiumCore(context);
     }
@@ -119,16 +117,48 @@ public class PdfEngine implements BookEngine {
         try {
             pdfiumCore.openPage(pdfDocument, pageIndex);
 
-            int width = (int) (pdfiumCore.getPageWidthPoint(pdfDocument, pageIndex) * RENDER_SCALE);
-            int height = (int) (pdfiumCore.getPageHeightPoint(pdfDocument, pageIndex) * RENDER_SCALE);
+            int pw = pdfiumCore.getPageWidthPoint(pdfDocument, pageIndex);
+            int ph = pdfiumCore.getPageHeightPoint(pdfDocument, pageIndex);
+
+            int maxDim = Math.max(pw, ph);
+            float scale = 800f / maxDim;
+
+            if (scale > 1.0f) {
+                scale = 1.0f;
+            }
+
+            int width = (int) (pw * scale);
+            int height = (int) (ph * scale);
 
             Bitmap bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.RGB_565);
+            bitmap.eraseColor(android.graphics.Color.WHITE);
 
             pdfiumCore.renderPageBitmap(pdfDocument, bitmap, pageIndex, 0, 0, width, height);
 
             return bitmap;
+        } catch (OutOfMemoryError e) {
+            try {
+                int pw = pdfiumCore.getPageWidthPoint(pdfDocument, pageIndex);
+                int ph = pdfiumCore.getPageHeightPoint(pdfDocument, pageIndex);
+
+                int maxDim = Math.max(pw, ph);
+                float scale = 600f / maxDim;
+
+                if (scale > 1.0f) {
+                    scale = 1.0f;
+                }
+
+                int fallbackWidth = (int) (pw * scale);
+                int fallbackHeight = (int) (ph * scale);
+
+                Bitmap bitmap = Bitmap.createBitmap(fallbackWidth, fallbackHeight, Bitmap.Config.RGB_565);
+                bitmap.eraseColor(android.graphics.Color.WHITE);
+                pdfiumCore.renderPageBitmap(pdfDocument, bitmap, pageIndex, 0, 0, fallbackWidth, fallbackHeight);
+                return bitmap;
+            } catch (Exception ex) {
+                return null;
+            }
         } catch (Exception e) {
-            e.printStackTrace();
             return null;
         }
     }
