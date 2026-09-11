@@ -22,6 +22,11 @@
             android:configChanges="orientation|screenSize|screenLayout|keyboardHidden">
         </activity>
 
+        <activity
+            android:name=".FileExplorerActivity"
+            android:configChanges="orientation|screenSize|screenLayout|keyboardHidden">
+        </activity>
+
     </application>
 
 </manifest>
