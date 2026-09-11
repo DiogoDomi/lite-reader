@@ -2,94 +2,200 @@ package com.leitor.cbz;
 
 import android.app.Activity;
 import android.content.Intent;
-import android.database.Cursor;
-import android.net.Uri;
+import android.graphics.Color;
 import android.os.Bundle;
-import android.provider.MediaStore;
+import android.os.Environment;
 import android.view.Gravity;
 import android.view.View;
-import android.widget.Button;
+import android.view.ViewGroup;
+import android.widget.AdapterView;
+import android.widget.ArrayAdapter;
 import android.widget.FrameLayout;
+import android.widget.LinearLayout;
+import android.widget.ListView;
+import android.widget.TextView;
 import android.widget.Toast;
 
+import java.io.File;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.Comparator;
+import java.util.List;
+
 public class MainActivity extends Activity {
+
+    private ListView listView;
+    private TextView pathTextView;
+    private List<File> fileList = new ArrayList<>();
+    private File currentDirectory;
+    private File rootDirectory;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
 
-        FrameLayout layout = new FrameLayout(this);
+        rootDirectory = Environment.getExternalStorageDirectory();
 
-        Button openBtn = new Button(this);
-        openBtn.setText("Open File");
-        FrameLayout.LayoutParams params = new FrameLayout.LayoutParams(
-            FrameLayout.LayoutParams.WRAP_CONTENT,
-            FrameLayout.LayoutParams.WRAP_CONTENT
+        LinearLayout mainLayout = new LinearLayout(this);
+        mainLayout.setOrientation(LinearLayout.VERTICAL);
+        mainLayout.setBackgroundColor(Color.parseColor("#121212"));
+
+        FrameLayout topBar = new FrameLayout(this);
+        topBar.setBackgroundColor(Color.parseColor("#1F1F1F"));
+        int topBarHeight = (int) (56 * getResources().getDisplayMetrics().density);
+        topBar.setLayoutParams(new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                topBarHeight
+        ));
+
+        pathTextView = new TextView(this);
+        pathTextView.setTextColor(Color.WHITE);
+        pathTextView.setTextSize(18f);
+        pathTextView.setSingleLine(true);
+        pathTextView.setEllipsize(android.text.TextUtils.TruncateAt.START);
+        FrameLayout.LayoutParams titleParams = new FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.WRAP_CONTENT,
+                FrameLayout.LayoutParams.WRAP_CONTENT
         );
-        params.gravity = Gravity.CENTER;
-        openBtn.setLayoutParams(params);
+        titleParams.gravity = Gravity.CENTER_VERTICAL | Gravity.START;
+        int paddingPx = (int) (16 * getResources().getDisplayMetrics().density);
+        titleParams.setMargins(paddingPx, 0, paddingPx, 0);
+        pathTextView.setLayoutParams(titleParams);
 
-        openBtn.setOnClickListener(new View.OnClickListener() {
+        topBar.addView(pathTextView);
+        mainLayout.addView(topBar);
+
+        listView = new ListView(this);
+        listView.setLayoutParams(new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.MATCH_PARENT
+        ));
+        listView.setDividerHeight(1);
+        mainLayout.addView(listView);
+
+        setContentView(mainLayout);
+
+        listView.setOnItemClickListener(new AdapterView.OnItemClickListener() {
             @Override
-            public void onClick(View v) {
-                try {
-                    Intent intent = new Intent(Intent.ACTION_GET_CONTENT);
-                    intent.setType("*/*");
-                    startActivityForResult(intent, 1001);
-                } catch (Exception e) {
-                    Toast.makeText(MainActivity.this, "File explorer error: " + e.getMessage(), Toast.LENGTH_LONG).show();
+            public void onItemClick(AdapterView<?> parent, View view, int position, long id) {
+                File clickedFile = fileList.get(position);
+
+                if (clickedFile.getName().equals("..")) {
+                    loadFolder(currentDirectory.getParentFile());
+                } else if (clickedFile.isDirectory()) {
+                    loadFolder(clickedFile);
+                } else {
+                    openReader(clickedFile.getAbsolutePath());
                 }
             }
         });
 
-        layout.addView(openBtn);
-        setContentView(layout);
+        if (savedInstanceState != null) {
+            String savedPath = savedInstanceState.getString("current_path");
+            if (savedPath != null) {
+                File savedDir = new File(savedPath);
+                if (savedDir.exists() && savedDir.isDirectory()) {
+                    loadFolder(savedDir);
+                    return;
+                }
+            }
+        }
+
+        loadFolder(rootDirectory);
     }
 
     @Override
-    protected void onActivityResult(int requestCode, int resultCode, Intent data) {
-        super.onActivityResult(requestCode, resultCode, data);
-        if (requestCode == 1001 && resultCode == RESULT_OK && data != null) {
-            try {
-                Uri uri = data.getData();
-                String realPath = getPath(uri);
-
-                if (realPath != null) {
-                    String lowerPath = realPath.toLowerCase();
-                    if (lowerPath.endsWith(".cbz") || lowerPath.endsWith(".zip") || lowerPath.endsWith(".pdf")) {
-                        Intent intent = new Intent(MainActivity.this, ReaderActivity.class);
-                        intent.putExtra("FILE_PATH", realPath);
-                        startActivity(intent);
-                    } else {
-                        Toast.makeText(this, "Unsupported format yet.", Toast.LENGTH_LONG).show();
-                    }
-                }
-            } catch (Exception e) {
-                Toast.makeText(this, "Intent Crash Prevented: " + e.getMessage(), Toast.LENGTH_LONG).show();
-            }
+    protected void onSaveInstanceState(Bundle outState) {
+        super.onSaveInstanceState(outState);
+        if (currentDirectory != null) {
+            outState.putString("current_path", currentDirectory.getAbsolutePath());
         }
     }
 
-    private String getPath(Uri uri) {
-        if (uri == null) return null;
-        if ("file".equalsIgnoreCase(uri.getScheme())) return uri.getPath();
+    private void loadFolder(File folder) {
+        if (folder == null || !folder.exists() || !folder.isDirectory()) {
+            Toast.makeText(this, "Cannot access folder.", Toast.LENGTH_SHORT).show();
+            return;
+        }
 
-        String[] projection = { MediaStore.Images.Media.DATA };
-        Cursor cursor = null;
-        try {
-            cursor = getContentResolver().query(uri, projection, null, null, null);
-            if (cursor != null && cursor.moveToFirst()) {
-                int colIndex = cursor.getColumnIndexOrThrow(MediaStore.Images.Media.DATA);
-                return cursor.getString(colIndex);
-            }
-        } catch (Exception e) {
-            e.printStackTrace();
-        } finally {
-            if (cursor != null) {
-                cursor.close();
+        currentDirectory = folder;
+        pathTextView.setText(folder.getName().equals("0") ? "Internal Storage" : folder.getName());
+        fileList.clear();
+
+        File[] files = folder.listFiles();
+        List<File> directories = new ArrayList<>();
+        List<File> books = new ArrayList<>();
+
+        if (files != null) {
+            for (File file : files) {
+                if (file.isHidden()) continue;
+
+                if (file.isDirectory()) {
+                    directories.add(file);
+                } else {
+                    String lowerPath = file.getName().toLowerCase();
+                    if (lowerPath.endsWith(".cbz") || lowerPath.endsWith(".zip") || lowerPath.endsWith(".pdf")) {
+                        books.add(file);
+                    }
+                }
             }
         }
-        return null;
+
+        Comparator<File> fileComparator = new Comparator<File>() {
+            @Override
+            public int compare(File f1, File f2) {
+                return f1.getName().compareToIgnoreCase(f2.getName());
+            }
+        };
+        Collections.sort(directories, fileComparator);
+        Collections.sort(books, fileComparator);
+
+        if (!folder.getAbsolutePath().equals(rootDirectory.getAbsolutePath())) {
+            fileList.add(new File(folder, ".."));
+        }
+
+        fileList.addAll(directories);
+        fileList.addAll(books);
+
+        ArrayAdapter<File> adapter = new ArrayAdapter<File>(this, android.R.layout.simple_list_item_1, fileList) {
+            @Override
+            public View getView(int position, View convertView, ViewGroup parent) {
+                TextView view = (TextView) super.getView(position, convertView, parent);
+                File file = getItem(position);
+
+                int pad = (int) (16 * getResources().getDisplayMetrics().density);
+                view.setPadding(pad, pad, pad, pad);
+
+                if (file.getName().equals("..")) {
+                    view.setText("⬅️ Go Back");
+                    view.setTextColor(Color.parseColor("#4FC3F7"));
+                } else if (file.isDirectory()) {
+                    view.setText("📁 " + file.getName());
+                    view.setTextColor(Color.parseColor("#FFD54F"));
+                } else {
+                    view.setText("📖 " + file.getName());
+                    view.setTextColor(Color.WHITE);
+                }
+                return view;
+            }
+        };
+
+        listView.setAdapter(adapter);
+    }
+
+    private void openReader(String path) {
+        Intent intent = new Intent(MainActivity.this, ReaderActivity.class);
+        intent.putExtra("FILE_PATH", path);
+        startActivity(intent);
+    }
+
+    @Override
+    public void onBackPressed() {
+        if (currentDirectory != null && !currentDirectory.getAbsolutePath().equals(rootDirectory.getAbsolutePath())) {
+            loadFolder(currentDirectory.getParentFile());
+        } else {
+            super.onBackPressed();
+        }
     }
 }
 
