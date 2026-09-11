@@ -496,6 +496,8 @@ public class ReaderActivity extends Activity {
             isSliceBitmapMode = prefs.getBoolean(currentFilePath + "_slice", false);
             isRtlMode = prefs.getBoolean(currentFilePath + "_rtl", true);
 
+            prefs.edit().putInt(currentFilePath + "_total", bookEngine.getPageCount()).apply();
+
             bookEngine.setSliceMode(isSliceBitmapMode);
 
             if (readingModeBtn != null) readingModeBtn.setText(isRtlMode ? "RTL" : "LTR");

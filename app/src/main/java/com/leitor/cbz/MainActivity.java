@@ -2,6 +2,7 @@ package com.leitor.cbz;
 
 import android.app.Activity;
 import android.content.Intent;
+import android.content.SharedPreferences;
 import android.graphics.Color;
 import android.os.Bundle;
 import android.os.Environment;
@@ -29,12 +30,14 @@ public class MainActivity extends Activity {
     private List<File> fileList = new ArrayList<>();
     private File currentDirectory;
     private File rootDirectory;
+    private SharedPreferences readerPrefs;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
 
         rootDirectory = Environment.getExternalStorageDirectory();
+        readerPrefs = getSharedPreferences("CBZReaderPrefs", MODE_PRIVATE);
 
         LinearLayout mainLayout = new LinearLayout(this);
         mainLayout.setOrientation(LinearLayout.VERTICAL);
@@ -102,6 +105,14 @@ public class MainActivity extends Activity {
         }
 
         loadFolder(rootDirectory);
+    }
+
+    @Override
+    protected void onResume() {
+        super.onResume();
+        if (listView != null && listView.getAdapter() != null) {
+            ((ArrayAdapter) listView.getAdapter()).notifyDataSetChanged();
+        }
     }
 
     @Override
@@ -173,8 +184,29 @@ public class MainActivity extends Activity {
                     view.setText("📁 " + file.getName());
                     view.setTextColor(Color.parseColor("#FFD54F"));
                 } else {
-                    view.setText("📖 " + file.getName());
-                    view.setTextColor(Color.WHITE);
+                    String path = file.getAbsolutePath();
+                    int page = readerPrefs.getInt(path + "_page", 0);
+                    int total = readerPrefs.getInt(path + "_total", 0);
+
+                    String status = "";
+                    int color = Color.WHITE;
+
+                    if (total > 0) {
+                        if (page >= total - 1) {
+                            status = "  [100%]";
+                            color = Color.parseColor("#5A6B5D");
+                        } else if (page > 0) {
+                            int percent = (int) (((float) (page + 1) / total) * 100);
+                            status = "  [" + percent + "%]";
+                            color = Color.parseColor("#64B5F6");
+                        }
+                    } else if (page > 0) {
+                        status = "  [Reading]";
+                        color = Color.parseColor("#64B5F6");
+                    }
+
+                    view.setText("📖 " + file.getName() + status);
+                    view.setTextColor(color);
                 }
                 return view;
             }
