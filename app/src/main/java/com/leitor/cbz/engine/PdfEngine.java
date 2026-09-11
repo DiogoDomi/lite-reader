@@ -121,10 +121,10 @@ public class PdfEngine implements BookEngine {
             int ph = pdfiumCore.getPageHeightPoint(pdfDocument, pageIndex);
 
             int maxDim = Math.max(pw, ph);
-            float scale = 800f / maxDim;
+            float scale = 1600f / maxDim;
 
-            if (scale > 1.0f) {
-                scale = 1.0f;
+            if (scale > 2.5f) {
+                scale = 2.5f;
             }
 
             int width = (int) (pw * scale);
@@ -134,19 +134,17 @@ public class PdfEngine implements BookEngine {
             bitmap.eraseColor(android.graphics.Color.WHITE);
 
             pdfiumCore.renderPageBitmap(pdfDocument, bitmap, pageIndex, 0, 0, width, height);
-
             return bitmap;
+
         } catch (OutOfMemoryError e) {
             try {
                 int pw = pdfiumCore.getPageWidthPoint(pdfDocument, pageIndex);
                 int ph = pdfiumCore.getPageHeightPoint(pdfDocument, pageIndex);
 
                 int maxDim = Math.max(pw, ph);
-                float scale = 600f / maxDim;
+                float scale = 1280f / maxDim;
 
-                if (scale > 1.0f) {
-                    scale = 1.0f;
-                }
+                if (scale > 1.5f) scale = 1.5f;
 
                 int fallbackWidth = (int) (pw * scale);
                 int fallbackHeight = (int) (ph * scale);
@@ -155,8 +153,27 @@ public class PdfEngine implements BookEngine {
                 bitmap.eraseColor(android.graphics.Color.WHITE);
                 pdfiumCore.renderPageBitmap(pdfDocument, bitmap, pageIndex, 0, 0, fallbackWidth, fallbackHeight);
                 return bitmap;
-            } catch (Exception ex) {
-                return null;
+
+            } catch (OutOfMemoryError ex) {
+                try {
+                    int pw = pdfiumCore.getPageWidthPoint(pdfDocument, pageIndex);
+                    int ph = pdfiumCore.getPageHeightPoint(pdfDocument, pageIndex);
+
+                    int maxDim = Math.max(pw, ph);
+                    float scale = 800f / maxDim;
+
+                    if (scale > 1.0f) scale = 1.0f;
+
+                    int fallbackWidth = (int) (pw * scale);
+                    int fallbackHeight = (int) (ph * scale);
+
+                    Bitmap bitmap = Bitmap.createBitmap(fallbackWidth, fallbackHeight, Bitmap.Config.RGB_565);
+                    bitmap.eraseColor(android.graphics.Color.WHITE);
+                    pdfiumCore.renderPageBitmap(pdfDocument, bitmap, pageIndex, 0, 0, fallbackWidth, fallbackHeight);
+                    return bitmap;
+                } catch (Exception exc) {
+                    return null;
+                }
             }
         } catch (Exception e) {
             return null;
