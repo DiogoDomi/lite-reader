@@ -496,7 +496,8 @@ public class ReaderActivity extends Activity {
             isSliceBitmapMode = prefs.getBoolean(currentFilePath + "_slice", false);
             isRtlMode = prefs.getBoolean(currentFilePath + "_rtl", true);
 
-            prefs.edit().putInt(currentFilePath + "_total", bookEngine.getPageCount()).apply();
+            int totalPages = bookEngine.getPageCount();
+            prefs.edit().putInt(currentFilePath + "_total", totalPages).apply();
 
             bookEngine.setSliceMode(isSliceBitmapMode);
 
@@ -515,7 +516,9 @@ public class ReaderActivity extends Activity {
                 bottomBar.addView(pageSlider);
             }
 
-            if (savedPage < 0 || savedPage >= bookEngine.getPageCount()) {
+            pageSlider.setMax(totalPages - 1);
+
+            if (savedPage < 0 || savedPage >= totalPages) {
                 savedPage = 0;
                 savedPart = 0;
             }
@@ -527,7 +530,6 @@ public class ReaderActivity extends Activity {
                 renderBitmap(bitmaps[currentBitmapPart]);
             }
 
-            pageSlider.setMax(bookEngine.getPageCount() - 1);
             String fileName = new java.io.File(path).getName();
             fileNameText.setText(fileName);
 
