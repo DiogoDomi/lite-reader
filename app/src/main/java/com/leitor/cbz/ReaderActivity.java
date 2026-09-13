@@ -109,7 +109,7 @@ public class ReaderActivity extends Activity {
                 FrameLayout.LayoutParams.WRAP_CONTENT,
                 FrameLayout.LayoutParams.WRAP_CONTENT
             );
-            fileNameTextParams.gravity = Gravity.START | Gravity.CENTER_VERTICAL;
+            fileNameTextParams.gravity = Gravity.LEFT | Gravity.CENTER_VERTICAL;
             int fileNameTextPaddingPx = (int) (15 * getResources().getDisplayMetrics().density);
             int fileNameRightMarginPx = (int) (260 * getResources().getDisplayMetrics().density);
             fileNameTextParams.setMargins(fileNameTextPaddingPx, 0, fileNameRightMarginPx, 0);
@@ -121,7 +121,8 @@ public class ReaderActivity extends Activity {
                 FrameLayout.LayoutParams.WRAP_CONTENT,
                 FrameLayout.LayoutParams.MATCH_PARENT
             );
-            settingsParams.gravity = Gravity.END | Gravity.CENTER_VERTICAL;
+            settingsParams.gravity = Gravity.RIGHT | Gravity.CENTER_VERTICAL;
+            settingsParams.rightMargin = (int) (8 * getResources().getDisplayMetrics().density);
             settingsContainer.setLayoutParams(settingsParams);
 
             int btnMarginPx = (int) (6 * getResources().getDisplayMetrics().density);
@@ -247,7 +248,7 @@ public class ReaderActivity extends Activity {
 
             bottomBar = new LinearLayout(this);
             bottomBar.setOrientation(LinearLayout.HORIZONTAL);
-            bottomBar.setGravity(Gravity.END | Gravity.CENTER_VERTICAL);
+            bottomBar.setGravity(Gravity.RIGHT | Gravity.CENTER_VERTICAL);
             bottomBar.setBackgroundColor(Color.argb(220, 20, 20, 20));
             int bottomBarHeightPx = (int) (50 * getResources().getDisplayMetrics().density);
             FrameLayout.LayoutParams bottomBarParams = new FrameLayout.LayoutParams(
@@ -491,10 +492,18 @@ public class ReaderActivity extends Activity {
             bookEngine.openFile(path);
 
             SharedPreferences prefs = getSharedPreferences("CBZReaderPrefs", MODE_PRIVATE);
+            SharedPreferences globalPrefs = getSharedPreferences("GlobalPrefs", MODE_PRIVATE);
+
             int savedPage = prefs.getInt(currentFilePath + "_page", 0);
             int savedPart = prefs.getInt(currentFilePath + "_part", 0);
-            isSliceBitmapMode = prefs.getBoolean(currentFilePath + "_slice", false);
-            isRtlMode = prefs.getBoolean(currentFilePath + "_rtl", true);
+
+            if (prefs.contains(currentFilePath + "_slice")) {
+                isSliceBitmapMode = prefs.getBoolean(currentFilePath + "_slice", false);
+                isRtlMode = prefs.getBoolean(currentFilePath + "_rtl", true);
+            } else {
+                isSliceBitmapMode = globalPrefs.getBoolean("default_slice", false);
+                isRtlMode = globalPrefs.getBoolean("default_rtl", true);
+            }
 
             int totalPages = bookEngine.getPageCount();
             prefs.edit().putInt(currentFilePath + "_total", totalPages).apply();
@@ -503,7 +512,6 @@ public class ReaderActivity extends Activity {
 
             if (readingModeBtn != null) readingModeBtn.setText(isRtlMode ? "RTL" : "LTR");
 
-            isVolKeysEnabled = false;
             updateButtonColors();
 
             pageSlider.setScaleX(isRtlMode ? -1f : 1f);

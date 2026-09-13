@@ -36,9 +36,11 @@ public class FileExplorerActivity extends Activity {
     private File rootDirectory;
     private SharedPreferences readerPrefs;
     private SharedPreferences explorerPrefs;
+    private SharedPreferences globalPrefs;
 
     private int sortColumn = 0;
     private boolean sortAscending = true;
+    private boolean isPickMode = false;
 
     private TextView nameHeader;
     private TextView sizeHeader;
@@ -50,9 +52,17 @@ public class FileExplorerActivity extends Activity {
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
 
-        rootDirectory = Environment.getExternalStorageDirectory();
+        isPickMode = getIntent().getBooleanExtra("PICK_MODE", false);
+
         readerPrefs = getSharedPreferences("CBZReaderPrefs", MODE_PRIVATE);
         explorerPrefs = getSharedPreferences("ExplorerPrefs", MODE_PRIVATE);
+        globalPrefs = getSharedPreferences("GlobalPrefs", MODE_PRIVATE);
+
+        String defaultPath = globalPrefs.getString("default_dir", Environment.getExternalStorageDirectory().getAbsolutePath());
+        rootDirectory = new File(defaultPath);
+        if (!rootDirectory.exists() || !rootDirectory.isDirectory()) {
+            rootDirectory = Environment.getExternalStorageDirectory();
+        }
 
         sortColumn = explorerPrefs.getInt("sort_col", 0);
         sortAscending = explorerPrefs.getBoolean("sort_asc", true);
@@ -78,11 +88,58 @@ public class FileExplorerActivity extends Activity {
                 FrameLayout.LayoutParams.WRAP_CONTENT,
                 FrameLayout.LayoutParams.WRAP_CONTENT
         );
-        titleParams.gravity = Gravity.CENTER_VERTICAL | Gravity.START;
+        titleParams.gravity = Gravity.CENTER_VERTICAL | Gravity.LEFT;
         int paddingPx = (int) (16 * getResources().getDisplayMetrics().density);
-        titleParams.setMargins(paddingPx, 0, paddingPx, 0);
+        titleParams.setMargins(paddingPx, 0, (int) (120 * getResources().getDisplayMetrics().density), 0);
         pathTextView.setLayoutParams(titleParams);
         topBar.addView(pathTextView);
+
+        LinearLayout topBarButtons = new LinearLayout(this);
+        topBarButtons.setOrientation(LinearLayout.HORIZONTAL);
+        FrameLayout.LayoutParams btnsParams = new FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.WRAP_CONTENT,
+                FrameLayout.LayoutParams.MATCH_PARENT
+        );
+        btnsParams.gravity = Gravity.CENTER_VERTICAL | Gravity.RIGHT;
+        btnsParams.rightMargin = paddingPx;
+        topBarButtons.setLayoutParams(btnsParams);
+
+        if (isPickMode) {
+            TextView btnSelect = new TextView(this);
+            btnSelect.setText("✔️ SELECT ");
+            btnSelect.setTextColor(Color.parseColor("#64B5F6"));
+            btnSelect.setTextSize(16f);
+            btnSelect.setPadding(paddingPx, paddingPx, paddingPx * 2, paddingPx);
+            btnSelect.setGravity(Gravity.CENTER);
+            btnSelect.setOnClickListener(new View.OnClickListener() {
+                @Override
+                public void onClick(View v) {
+                    if (currentDirectory != null) {
+                        Intent resultIntent = new Intent();
+                        resultIntent.putExtra("PICKED_DIR", currentDirectory.getAbsolutePath());
+                        setResult(RESULT_OK, resultIntent);
+                        finish();
+                    }
+                }
+            });
+            topBarButtons.addView(btnSelect);
+        } else {
+            TextView btnSettings = new TextView(this);
+            btnSettings.setText("⚙️ CFG  ");
+            btnSettings.setTextColor(Color.WHITE);
+            btnSettings.setTextSize(16f);
+            btnSettings.setPadding(paddingPx, paddingPx, paddingPx * 2, paddingPx);
+            btnSettings.setGravity(Gravity.CENTER);
+            btnSettings.setOnClickListener(new View.OnClickListener() {
+                @Override
+                public void onClick(View v) {
+                    startActivity(new Intent(FileExplorerActivity.this, SettingsActivity.class));
+                }
+            });
+            topBarButtons.addView(btnSettings);
+        }
+
+        topBar.addView(topBarButtons);
         mainLayout.addView(topBar);
 
         LinearLayout headerBar = new LinearLayout(this);
@@ -92,9 +149,9 @@ public class FileExplorerActivity extends Activity {
 
         nameHeader = createHeaderTextView();
         sizeHeader = createHeaderTextView();
-        sizeHeader.setGravity(Gravity.END);
+        sizeHeader.setGravity(Gravity.RIGHT);
         dateHeader = createHeaderTextView();
-        dateHeader.setGravity(Gravity.END);
+        dateHeader.setGravity(Gravity.RIGHT);
 
         nameHeader.setLayoutParams(new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 0.6f));
         sizeHeader.setLayoutParams(new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 0.2f));
@@ -137,7 +194,9 @@ public class FileExplorerActivity extends Activity {
                 if (clickedFile.isDirectory()) {
                     loadFolder(clickedFile);
                 } else {
-                    openReader(clickedFile.getAbsolutePath());
+                    if (!isPickMode) {
+                        openReader(clickedFile.getAbsolutePath());
+                    }
                 }
             }
         });
@@ -309,12 +368,12 @@ public class FileExplorerActivity extends Activity {
                     holder.sizeView = new TextView(getContext());
                     holder.sizeView.setTextSize(16f);
                     holder.sizeView.setSingleLine(true);
-                    holder.sizeView.setGravity(Gravity.END);
+                    holder.sizeView.setGravity(Gravity.RIGHT);
 
                     holder.dateView = new TextView(getContext());
                     holder.dateView.setTextSize(16f);
                     holder.dateView.setSingleLine(true);
-                    holder.dateView.setGravity(Gravity.END);
+                    holder.dateView.setGravity(Gravity.RIGHT);
 
                     row.addView(nameCol, new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 0.6f));
                     row.addView(holder.sizeView, new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 0.2f));
@@ -398,7 +457,7 @@ public class FileExplorerActivity extends Activity {
 
     @Override
     public void onBackPressed() {
-        if (currentDirectory != null && !currentDirectory.getAbsolutePath().equals(rootDirectory.getAbsolutePath())) {
+        if (currentDirectory != null && !currentDirectory.getAbsolutePath().equals(Environment.getExternalStorageDirectory().getAbsolutePath())) {
             loadFolder(currentDirectory.getParentFile());
         } else {
             super.onBackPressed();

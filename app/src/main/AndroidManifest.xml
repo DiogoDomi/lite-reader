@@ -18,12 +18,17 @@
         </activity>
 
         <activity
-            android:name=".ReaderActivity"
+            android:name=".FileExplorerActivity"
             android:configChanges="orientation|screenSize|screenLayout|keyboardHidden">
         </activity>
 
         <activity
-            android:name=".FileExplorerActivity"
+            android:name=".SettingsActivity"
+            android:configChanges="orientation|screenSize|screenLayout|keyboardHidden">
+        </activity>
+
+        <activity
+            android:name=".ReaderActivity"
             android:configChanges="orientation|screenSize|screenLayout|keyboardHidden">
         </activity>
 
